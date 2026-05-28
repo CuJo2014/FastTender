@@ -1,6 +1,7 @@
 """Импортёры данных: каталог компании, прайсы поставщиков."""
 
 from fasttender.services.importer.catalog import CatalogImporter
+from fasttender.services.importer.pricelist import PriceListImporter
 from fasttender.services.importer.types import (
     DuplicateArticle,
     ImportError,
@@ -15,5 +16,6 @@ __all__ = [
     "ImportError",
     "ImportMode",
     "ImportReport",
+    "PriceListImporter",
     "RowError",
 ]

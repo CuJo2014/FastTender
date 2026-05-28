@@ -9,30 +9,24 @@
     импорт не падает.
   - Технические характеристики (Item.attributes) не извлекаются —
     остаются {}. Это Фаза 2 (см. раздел 4.2).
+
+Общая логика (validate/dedupe/replace/merge) — в _base.py, чтобы переиспользовать
+для импорта прайсов поставщиков (pricelist.py).
 """
 
 from pathlib import Path
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fasttender.models import DataSource, DataSourceStatus, DataSourceType, Item
+from fasttender.models import DataSource, DataSourceStatus, DataSourceType
+from fasttender.services.importer._base import apply_to_source, validate_and_dedupe
 from fasttender.services.importer.types import (
-    DuplicateArticle,
     ImportError,
     ImportMode,
     ImportReport,
-    RowError,
 )
-from fasttender.services.parser import (
-    ParsedItem,
-    ParseError,
-    SpecificationParser,
-)
-from fasttender.services.parser.value_normalizer import (
-    normalize_article,
-    normalize_name,
-)
+from fasttender.services.parser import ParseError, SpecificationParser
 
 DEFAULT_CATALOG_NAME = "Каталог компании"
 
@@ -86,29 +80,9 @@ class CatalogImporter:
             rows_total=len(parse_result.items),
         )
 
-        # Валидация и дедупликация внутри файла
-        valid_items, seen_articles = self._validate_and_dedupe(parse_result.items, report)
-
-        if mode is ImportMode.REPLACE:
-            report.rows_deactivated = await self._deactivate_existing(session, source.id)
-            new_items = self._build_orm_items(source.id, valid_items)
-            session.add_all(new_items)
-            report.rows_imported = len(new_items)
-        elif mode is ImportMode.MERGE:
-            imported, updated = await self._upsert(session, source.id, valid_items)
-            report.rows_imported = imported
-            report.rows_updated = updated
-        else:  # защита от расширения enum'а в будущем
-            raise ImportError(f"Неизвестный режим импорта: {mode}")
-
-        # Обновляем метку last_synced_at источника
-        source.last_synced_at = _now_utc()
-        # На случай если используется уже скрытый seen_articles
-        _ = seen_articles
-
+        valid_items = validate_and_dedupe(parse_result.items, report)
+        await apply_to_source(session, source, valid_items, mode, report)
         return report
-
-    # --- Внутренние методы ---
 
     @staticmethod
     async def _get_or_create_catalog_source(session: AsyncSession, *, name: str) -> DataSource:
@@ -132,156 +106,3 @@ class CatalogImporter:
         session.add(source)
         await session.flush()  # нужен source.id для последующих вставок
         return source
-
-    @staticmethod
-    def _validate_and_dedupe(
-        items: list[ParsedItem], report: ImportReport
-    ) -> tuple[list[ParsedItem], dict[str, int]]:
-        """Отсеивает невалидные строки и дубли артикулов внутри файла.
-
-        Дубликат = две строки с одинаковым `article_normalized` (не NULL).
-        Оставляем первую, остальные попадают в report.duplicates.
-        """
-        seen: dict[str, int] = {}  # article_normalized → line_number
-        duplicates: dict[str, list[int]] = {}
-        valid: list[ParsedItem] = []
-
-        for item in items:
-            if not item.name or not item.name.strip():
-                report.errors.append(
-                    RowError(
-                        line_number=item.line_number,
-                        reason="empty_name",
-                        raw=item.raw_row,
-                    )
-                )
-                report.rows_skipped += 1
-                continue
-
-            article_norm = normalize_article(item.article)
-            if article_norm is not None:
-                if article_norm in seen:
-                    duplicates.setdefault(article_norm, []).append(item.line_number)
-                    report.rows_skipped += 1
-                    continue
-                seen[article_norm] = item.line_number
-
-            valid.append(item)
-
-        report.duplicates = [
-            DuplicateArticle(
-                article=article,
-                first_line=seen[article],
-                duplicate_lines=lines,
-            )
-            for article, lines in duplicates.items()
-        ]
-        return valid, seen
-
-    @staticmethod
-    def _build_orm_items(source_id, items: list[ParsedItem]) -> list[Item]:  # type: ignore[no-untyped-def]
-        """Маппинг ParsedItem → Item для bulk-insert.
-
-        attributes остаётся {} — в Фазе 1 характеристики не извлекаются (раздел 4.2).
-        """
-        orm_items: list[Item] = []
-        for item in items:
-            orm_items.append(
-                Item(
-                    source_id=source_id,
-                    article_raw=item.article,
-                    article_normalized=normalize_article(item.article),
-                    name=item.name,
-                    name_normalized=normalize_name(item.name),
-                    manufacturer=item.manufacturer,
-                    manufacturer_normalized=(
-                        item.manufacturer.lower() if item.manufacturer else None
-                    ),
-                    price=item.price,
-                    currency=item.currency,
-                    unit=item.unit,
-                    in_stock=True,
-                    attributes={},
-                    is_active=True,
-                )
-            )
-        return orm_items
-
-    @classmethod
-    async def _deactivate_existing(cls, session: AsyncSession, source_id) -> int:  # type: ignore[no-untyped-def]
-        """Replace-режим: помечает все позиции источника is_active=false.
-
-        Физическое удаление не делаем — на эти Item могут ссылаться MatchCandidate
-        и Verification в истории обработанных спецификаций. Деактивация
-        исключает их из новых поисков (фильтр is_active=true в матчере).
-        """
-        result = await session.execute(
-            update(Item).where(Item.source_id == source_id).values(is_active=False)
-        )
-        return result.rowcount or 0
-
-    @classmethod
-    async def _upsert(
-        cls,
-        session: AsyncSession,
-        source_id,  # type: ignore[no-untyped-def]
-        items: list[ParsedItem],
-    ) -> tuple[int, int]:
-        """Merge-режим: обновляет существующие по article_normalized, остальные INSERT."""
-        articles = [a for a in (normalize_article(i.article) for i in items) if a is not None]
-        existing: dict[str, Item] = {}
-        if articles:
-            stmt = select(Item).where(
-                Item.source_id == source_id,
-                Item.article_normalized.in_(articles),
-            )
-            for row in (await session.scalars(stmt)).all():
-                if row.article_normalized:
-                    existing[row.article_normalized] = row
-
-        imported = 0
-        updated = 0
-        for item in items:
-            article_norm = normalize_article(item.article)
-            target = existing.get(article_norm) if article_norm else None
-            if target is not None:
-                target.article_raw = item.article
-                target.name = item.name
-                target.name_normalized = normalize_name(item.name)
-                target.manufacturer = item.manufacturer
-                target.manufacturer_normalized = (
-                    item.manufacturer.lower() if item.manufacturer else None
-                )
-                target.price = item.price
-                target.currency = item.currency
-                target.unit = item.unit
-                target.is_active = True
-                updated += 1
-            else:
-                session.add(
-                    Item(
-                        source_id=source_id,
-                        article_raw=item.article,
-                        article_normalized=article_norm,
-                        name=item.name,
-                        name_normalized=normalize_name(item.name),
-                        manufacturer=item.manufacturer,
-                        manufacturer_normalized=(
-                            item.manufacturer.lower() if item.manufacturer else None
-                        ),
-                        price=item.price,
-                        currency=item.currency,
-                        unit=item.unit,
-                        in_stock=True,
-                        attributes={},
-                        is_active=True,
-                    )
-                )
-                imported += 1
-        return imported, updated
-
-
-def _now_utc():  # type: ignore[no-untyped-def]
-    from datetime import UTC, datetime
-
-    return datetime.now(UTC)

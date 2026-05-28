@@ -1,0 +1,297 @@
+"""Интеграционные тесты импорта прайсов поставщиков."""
+
+from decimal import Decimal
+from pathlib import Path
+from uuid import uuid4
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fasttender.models import DataSource, DataSourceType, Item, Supplier
+from fasttender.services.importer import (
+    CatalogImporter,
+    ImportError,
+    ImportMode,
+    PriceListImporter,
+)
+from fasttender.services.importer.pricelist import CONFIG_KEY_MAPPING
+from fasttender.services.parser import ColumnMapping, SpecField
+from tests.fixtures.spec_builders import make_xlsx
+
+
+@pytest.fixture
+def importer() -> PriceListImporter:
+    return PriceListImporter()
+
+
+@pytest.fixture
+def catalog_importer() -> CatalogImporter:
+    return CatalogImporter()
+
+
+async def _make_supplier(session: AsyncSession, name: str) -> Supplier:
+    supplier = Supplier(name=name, contact_email=None, meta={})
+    session.add(supplier)
+    await session.flush()
+    return supplier
+
+
+async def test_first_import_creates_pricelist_source_and_learns_mapping(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Первый импорт лениво создаёт DataSource и сохраняет автодетектированный mapping."""
+    supplier = await _make_supplier(session, "ООО Поставщик-1")
+
+    path = make_xlsx(
+        tmp_path / "pl_v1.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["S1-001", "Болт от поставщика 1", "10.50"],
+            ["S1-002", "Гайка от поставщика 1", "3.20"],
+        ],
+    )
+
+    report = await importer.import_file(
+        session, supplier_id=supplier.id, path=path, mode=ImportMode.REPLACE
+    )
+    await session.commit()
+
+    assert report.rows_imported == 2
+
+    # Создан DataSource нужного типа, привязан к поставщику
+    source = await session.scalar(select(DataSource).where(DataSource.supplier_id == supplier.id))
+    assert source is not None
+    assert source.type is DataSourceType.SUPPLIER_PRICELIST
+    assert source.name == "Прайс: ООО Поставщик-1"
+
+    # Mapping сохранился в config — система «выучила» структуру
+    saved = source.config.get(CONFIG_KEY_MAPPING)
+    assert saved is not None
+    assert saved["article"] == 0
+    assert saved["name"] == 1
+    assert saved["price"] == 2
+
+
+async def test_second_import_reuses_saved_mapping(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Второй импорт того же поставщика применяет сохранённый шаблон."""
+    supplier = await _make_supplier(session, "ООО Поставщик-1")
+
+    # Первый файл с нормальной шапкой
+    first = make_xlsx(
+        tmp_path / "v1.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-001", "Позиция A", "100"],
+        ],
+    )
+    await importer.import_file(
+        session, supplier_id=supplier.id, path=first, mode=ImportMode.REPLACE
+    )
+    await session.commit()
+
+    # Второй файл — НЕстандартная шапка (без узнаваемых заголовков),
+    # но т.к. mapping уже выучен, импорт пройдёт по сохранённой схеме.
+    second = make_xlsx(
+        tmp_path / "v2.xlsx",
+        rows=[
+            ["xxx", "yyy", "zzz"],  # бесполезные заголовки
+            ["A-002", "Позиция B", "200"],
+        ],
+    )
+    report = await importer.import_file(
+        session, supplier_id=supplier.id, path=second, mode=ImportMode.MERGE
+    )
+    await session.commit()
+
+    assert report.rows_imported == 1  # A-002 — новый
+    # «xxx/yyy/zzz» интерпретировалось как шапка, т.к. mapping override применился
+    items = (await session.scalars(select(Item))).all()
+    by_article = {i.article_normalized: i for i in items}
+    assert by_article["A002"].name == "Позиция B"
+
+
+async def test_explicit_mapping_override_wins(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Если передан mapping_override, он применяется даже при наличии сохранённого."""
+    supplier = await _make_supplier(session, "ООО Поставщик-1")
+
+    path = make_xlsx(
+        tmp_path / "weird.xlsx",
+        rows=[
+            ["a", "b", "c", "d"],
+            ["IGNORE-1", "Кривая позиция", 999, 999],
+            ["GOOD-1", "Правильная позиция", 50, "ШТ"],
+        ],
+    )
+    mapping = ColumnMapping(
+        columns={
+            SpecField.ARTICLE: 0,
+            SpecField.NAME: 1,
+            SpecField.PRICE: 2,
+            SpecField.UNIT: 3,
+        }
+    )
+    report = await importer.import_file(
+        session,
+        supplier_id=supplier.id,
+        path=path,
+        mode=ImportMode.REPLACE,
+        mapping_override=mapping,
+    )
+    await session.commit()
+
+    # Mapping override: первая «шапка» становится строкой данных, поэтому
+    # обе строки берутся как items (включая IGNORE-1)
+    assert report.rows_imported == 2
+    items = (await session.scalars(select(Item))).all()
+    by_article = {i.article_normalized: i for i in items}
+    assert by_article["GOOD1"].price == Decimal("50")
+    assert by_article["GOOD1"].unit == "ШТ"
+
+
+async def test_pricelist_for_unknown_supplier_raises(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    path = make_xlsx(
+        tmp_path / "v.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["X-1", "X", "1"],
+        ],
+    )
+    with pytest.raises(ImportError, match="не найден"):
+        await importer.import_file(session, supplier_id=uuid4(), path=path, mode=ImportMode.REPLACE)
+
+
+async def test_different_suppliers_get_independent_sources(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Импорт от разных поставщиков → разные DataSource, изоляция данных."""
+    s1 = await _make_supplier(session, "Supplier-1")
+    s2 = await _make_supplier(session, "Supplier-2")
+
+    file_s1 = make_xlsx(
+        tmp_path / "s1.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["COMMON-001", "Болт от S1", "10"],
+        ],
+    )
+    file_s2 = make_xlsx(
+        tmp_path / "s2.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["COMMON-001", "Болт от S2 (другая цена)", "12"],
+        ],
+    )
+
+    await importer.import_file(session, supplier_id=s1.id, path=file_s1, mode=ImportMode.REPLACE)
+    await importer.import_file(session, supplier_id=s2.id, path=file_s2, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    # Один и тот же артикул в двух разных source — это норма (раздел 8.2)
+    items = (await session.scalars(select(Item).order_by(Item.price))).all()
+    assert len(items) == 2
+    assert items[0].price == Decimal("10")
+    assert items[1].price == Decimal("12")
+    assert items[0].source_id != items[1].source_id
+
+
+async def test_catalog_and_pricelist_coexist_with_same_article(
+    session: AsyncSession,
+    catalog_importer: CatalogImporter,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Один артикул может быть и в каталоге компании, и в прайсе — это разные source.
+
+    Это ключевой инвариант раздела 8.2: единая таблица ITEM, разные источники.
+    Unique-индекс (source_id, article_normalized) не должен мешать.
+    """
+    supplier = await _make_supplier(session, "Конкурирующий поставщик")
+
+    cat_file = make_xlsx(
+        tmp_path / "cat.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["SHARED-001", "Наша позиция (каталог)", "100"],
+        ],
+    )
+    pl_file = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["SHARED-001", "Их позиция (прайс)", "80"],
+        ],
+    )
+
+    await catalog_importer.import_file(session, cat_file, mode=ImportMode.REPLACE)
+    await importer.import_file(
+        session, supplier_id=supplier.id, path=pl_file, mode=ImportMode.REPLACE
+    )
+    await session.commit()
+
+    items = (await session.scalars(select(Item).order_by(Item.price))).all()
+    assert len(items) == 2
+    assert [i.article_normalized for i in items] == ["SHARED001", "SHARED001"]
+    # Дифференциация — через source.type
+    sources_by_item = {i.id: (await session.get(DataSource, i.source_id)).type for i in items}
+    types = list(sources_by_item.values())
+    assert DataSourceType.COMPANY_CATALOG in types
+    assert DataSourceType.SUPPLIER_PRICELIST in types
+
+
+async def test_merge_mode_updates_existing_pricelist_items(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    supplier = await _make_supplier(session, "Supplier-1")
+
+    first = make_xlsx(
+        tmp_path / "v1.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-1", "Старая цена", "100"],
+        ],
+    )
+    second = make_xlsx(
+        tmp_path / "v2.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-1", "Новая цена", "150"],
+            ["A-2", "Новая позиция", "200"],
+        ],
+    )
+
+    await importer.import_file(
+        session, supplier_id=supplier.id, path=first, mode=ImportMode.REPLACE
+    )
+    await session.commit()
+
+    report = await importer.import_file(
+        session, supplier_id=supplier.id, path=second, mode=ImportMode.MERGE
+    )
+    await session.commit()
+
+    assert report.rows_updated == 1
+    assert report.rows_imported == 1
+
+    items = (await session.scalars(select(Item))).all()
+    by_article = {i.article_normalized: i for i in items}
+    assert by_article["A1"].price == Decimal("150")
+    assert by_article["A1"].name == "Новая цена"
