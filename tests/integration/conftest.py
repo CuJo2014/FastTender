@@ -21,6 +21,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 DEFAULT_TEST_URL = "postgresql+asyncpg://fasttender:fasttender@localhost:5433/fasttender"
 TEST_DB_URL = os.environ.get("FT_TEST_DATABASE_URL", DEFAULT_TEST_URL)
 
+# Заставляем приложение (его собственный engine через get_settings) ходить
+# в ту же тестовую БД, что и savepoint fixture. Иначе POST через HTTP в
+# тестах API уйдёт в localhost:5432, которого нет.
+os.environ["FT_DATABASE_URL"] = TEST_DB_URL
+os.environ["FT_DATABASE_URL_SYNC"] = TEST_DB_URL.replace("postgresql+asyncpg", "postgresql+psycopg")
+# Тестам нужен writable upload dir; дефолт /var/lib/fasttender/uploads недоступен
+os.environ["FT_UPLOAD_DIR"] = "/tmp/ft_test_uploads"
+
+# Settings кешируется через lru_cache — сбрасываем, чтобы env применился
+from fasttender.core.config import get_settings as _get_settings  # noqa: E402
+
+_get_settings.cache_clear()
+
 
 def _is_postgres_available() -> bool:
     """Быстрая синхронная проверка доступности БД до старта тестов."""

@@ -15,9 +15,7 @@ celery_app = Celery(
     broker=settings.redis_url_str,
     backend=settings.redis_url_str,
     include=[
-        "fasttender.tasks.parse",
-        "fasttender.tasks.normalize",
-        "fasttender.tasks.match",
+        "fasttender.tasks.process",
     ],
 )
 
