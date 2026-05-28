@@ -26,7 +26,12 @@ class DataSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "data_source"
 
     type: Mapped[DataSourceType] = mapped_column(
-        Enum(DataSourceType, name="data_source_type"),
+        Enum(
+            DataSourceType,
+            name="data_source_type",
+            values_callable=lambda enum: [e.value for e in enum],
+            create_type=False,
+        ),
         nullable=False,
         index=True,
     )
@@ -43,7 +48,12 @@ class DataSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     config: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     status: Mapped[DataSourceStatus] = mapped_column(
-        Enum(DataSourceStatus, name="data_source_status"),
+        Enum(
+            DataSourceStatus,
+            name="data_source_status",
+            values_callable=lambda enum: [e.value for e in enum],
+            create_type=False,
+        ),
         nullable=False,
         default=DataSourceStatus.ACTIVE,
     )

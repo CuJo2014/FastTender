@@ -34,7 +34,12 @@ class MatchCandidate(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     confidence: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     match_type: Mapped[MatchType] = mapped_column(
-        Enum(MatchType, name="match_type"),
+        Enum(
+            MatchType,
+            name="match_type",
+            values_callable=lambda enum: [e.value for e in enum],
+            create_type=False,
+        ),
         nullable=False,
     )
     rank: Mapped[int] = mapped_column(Integer, nullable=False)

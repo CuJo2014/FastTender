@@ -35,7 +35,12 @@ class Verification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     decision: Mapped[VerificationDecision] = mapped_column(
-        Enum(VerificationDecision, name="verification_decision"),
+        Enum(
+            VerificationDecision,
+            name="verification_decision",
+            values_callable=lambda enum: [e.value for e in enum],
+            create_type=False,
+        ),
         nullable=False,
     )
 

@@ -22,7 +22,12 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     status: Mapped[SpecificationStatus] = mapped_column(
-        Enum(SpecificationStatus, name="specification_status"),
+        Enum(
+            SpecificationStatus,
+            name="specification_status",
+            values_callable=lambda enum: [e.value for e in enum],
+            create_type=False,
+        ),
         nullable=False,
         default=SpecificationStatus.UPLOADED,
         index=True,
