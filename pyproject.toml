@@ -82,6 +82,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "alembic/versions/*.py" = ["N999"]  # имена миграций в snake_case с числовым префиксом
 "src/fasttender/models/*.py" = ["N811"]   # PgUUID alias — стандартный паттерн SQLAlchemy
+"src/fasttender/repositories/*.py" = ["N811"]
 "src/fasttender/api/**/*.py" = ["B008", "ASYNC240"]   # Depends(...) и pathlib для cleanup — норма в FastAPI
 
 [tool.pytest.ini_options]
