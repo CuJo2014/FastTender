@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# uv
+uv.lock-local
+
+# Тесты и линтеры
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Локальное окружение
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Файлы загрузок
+uploads/
+/var/lib/fasttender/
+
+# Node / Frontend (на будущее)
+node_modules/
+dist/
+.cache/
+.parcel-cache/
+
+# Логи
+*.log

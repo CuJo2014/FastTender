@@ -1,0 +1,101 @@
+[project]
+name = "fasttender"
+version = "0.1.0"
+description = "Система автоматической обработки закупочных спецификаций (Фаза 1 — прототип)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "FastTender team" }]
+dependencies = [
+    # Web
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
+    # Config / validation
+    "pydantic>=2.5",
+    "pydantic-settings>=2.2",
+    # DB
+    "sqlalchemy[asyncio]>=2.0.27",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",  # для синхронных операций Alembic
+    # Очередь задач
+    "celery[redis]>=5.3",
+    "redis>=5.0",
+    # Парсинг файлов (Фаза 1)
+    "openpyxl>=3.1",
+    "xlrd>=2.0.1",            # для .xls — старый формат
+    "pandas>=2.2",
+    "chardet>=5.2",
+    # Матчинг
+    "rapidfuzz>=3.6",
+    # HTTP-клиент
+    "httpx>=0.27",
+    # Логирование
+    "structlog>=24.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.1",
+    "httpx>=0.27",
+    "ruff>=0.3",
+    "mypy>=1.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fasttender"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # flake8-bugbear
+    "UP",       # pyupgrade
+    "N",        # pep8-naming
+    "ASYNC",    # async-specific
+    "RUF",      # ruff-specific
+]
+ignore = [
+    "E501",     # длинные строки — line-length проверяется отдельно
+    "RUF001",   # ambiguous cyrillic char in string — у нас русскоязычный проект
+    "RUF002",   # то же в docstring
+    "RUF003",   # то же в комментарии
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["N999"]  # имена миграций в snake_case с числовым префиксом
+"src/fasttender/models/*.py" = ["N811"]   # PgUUID alias — стандартный паттерн SQLAlchemy
+"src/fasttender/api/**/*.py" = ["B008"]   # Depends(...) в default — стандарт FastAPI
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "integration: тесты, требующие реальной БД",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "rapidfuzz.*"]
+ignore_missing_imports = true

@@ -1,0 +1,107 @@
+# Dev-окружение Фазы 1.
+# Сервисы: postgres (с pg_trgm/btree_gin), redis, app (FastAPI), worker (Celery),
+# migrations (одноразовый прогон Alembic).
+# Раздел 13.6 архитектурного документа.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ft_postgres
+    environment:
+      POSTGRES_USER: fasttender
+      POSTGRES_PASSWORD: fasttender
+      POSTGRES_DB: fasttender
+    ports:
+      - "5433:5432"  # 5432 на хосте обычно занят локальным Postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fasttender -d fasttender"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ft_redis
+    ports:
+      - "6380:6379"  # 6379 на хосте обычно занят локальным Redis
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FT_DATABASE_URL: postgresql+asyncpg://fasttender:fasttender@postgres:5432/fasttender
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://fasttender:fasttender@postgres:5432/fasttender
+      FT_REDIS_URL: redis://redis:6379/0
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      FT_DATABASE_URL: postgresql+asyncpg://fasttender:fasttender@postgres:5432/fasttender
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://fasttender:fasttender@postgres:5432/fasttender
+      FT_REDIS_URL: redis://redis:6379/0
+      FT_DEBUG: "true"
+      FT_UPLOAD_DIR: /var/lib/fasttender/uploads
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploads:/var/lib/fasttender/uploads
+      - ./src:/app/src                 # live-reload в dev
+      - ./alembic:/app/alembic
+    command: >
+      uv run uvicorn fasttender.main:app
+      --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      FT_DATABASE_URL: postgresql+asyncpg://fasttender:fasttender@postgres:5432/fasttender
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://fasttender:fasttender@postgres:5432/fasttender
+      FT_REDIS_URL: redis://redis:6379/0
+      FT_UPLOAD_DIR: /var/lib/fasttender/uploads
+    volumes:
+      - uploads:/var/lib/fasttender/uploads
+      - ./src:/app/src
+    command: >
+      uv run celery -A fasttender.core.celery_app:celery_app worker
+      --loglevel=info --concurrency=2
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
