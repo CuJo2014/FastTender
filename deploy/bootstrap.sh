@@ -19,6 +19,9 @@ case "$CMD" in
     PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '+/=' | head -c 24)"
     echo "Generating bcrypt hash..." >&2
     HASH="$(docker run --rm caddy:2-alpine caddy hash-password --plaintext "$PASSWORD" 2>/dev/null)"
+    # Для docker-compose --env-file нужно эскейпить $ как $$, иначе compose
+    # пытается интерполировать `$2a`, `$14`, ... как переменные.
+    HASH_ESCAPED="$(printf '%s' "$HASH" | sed 's/\$/$$/g')"
 
     cat <<EOF
 
@@ -27,9 +30,9 @@ Basic Auth credentials:
   password: $PASSWORD
   bcrypt:   $HASH
 
-Скопируй в .env.prod:
+Скопируй в .env.prod (значение хеша уже с эскейпленными \$\$ под docker compose):
   BASIC_AUTH_USER=$USER
-  BASIC_AUTH_HASH=$HASH
+  BASIC_AUTH_HASH=$HASH_ESCAPED
 
 Сохрани пароль (полностью) в надёжном месте — после деплоя его уже не достать.
 EOF
