@@ -42,6 +42,27 @@ curl http://localhost:8000/health        # liveness
 curl http://localhost:8000/health/ready  # readiness: проверяет БД и Redis
 ```
 
+## Прогон по золотому датасету
+
+Главный артефакт Phase 1 — цифра точности матчера на размеченных
+вручную данных (раздел 16.6, точка принятия решения о Phase 2).
+
+```bash
+# Каталог должен быть уже загружен (через UI или /api/v1/catalog/import).
+# Шаблон gold_dataset_template_new.xlsx — формат из Приложения C.3
+# с добавленной колонкой «Характеристика (как у клиента)».
+
+uv run python -m fasttender.scripts.eval_gold \
+    docs/gold_dataset_template_new.xlsx \
+    --output /tmp/result.xlsx \
+    --top-k 5
+```
+
+В консоль печатается сводка: `Recall@K / Precision@1 / MRR`.
+В выходном XLSX заполняются колонки M-O (результат матчера + «Совпало»)
+и добавляется лист «Метрики». Колонки находятся по заголовку, поэтому
+к перестановке столбцов скрипт устойчив.
+
 ## Frontend (Phase 1 UI)
 
 В отдельном терминале:

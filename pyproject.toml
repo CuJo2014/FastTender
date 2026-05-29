@@ -84,6 +84,8 @@ ignore = [
 "src/fasttender/models/*.py" = ["N811"]   # PgUUID alias — стандартный паттерн SQLAlchemy
 "src/fasttender/repositories/*.py" = ["N811"]
 "src/fasttender/api/**/*.py" = ["B008", "ASYNC240"]   # Depends(...) и pathlib для cleanup — норма в FastAPI
+"src/fasttender/scripts/*.py" = ["ASYNC240"]          # CLI — sync IO допустим
+"tests/**/*.py" = ["ASYNC240"]                        # тесты — sync IO допустим
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
