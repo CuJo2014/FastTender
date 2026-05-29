@@ -1,0 +1,302 @@
+import { useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "../lib/api";
+import type { VerificationDecision } from "../types/api";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, CardBody, CardHeader } from "../components/ui/Card";
+import { SpecItemRow } from "../components/SpecItemRow";
+import {
+  formatDateTime,
+  isInProgress,
+  statusLabel,
+  statusTone,
+} from "../lib/format";
+
+export function SpecificationDetailPage() {
+  const { specId } = useParams<{ specId: string }>();
+  if (!specId) return null;
+  return <DetailContent specId={specId} />;
+}
+
+function DetailContent({ specId }: { specId: string }) {
+  const queryClient = useQueryClient();
+  const [autoConfirmThreshold, setAutoConfirmThreshold] = useState("0.9");
+
+  const specQuery = useQuery({
+    queryKey: ["specifications", specId],
+    queryFn: () => api.getSpecification(specId),
+    refetchInterval: (query) => {
+      const spec = query.state.data;
+      return spec && isInProgress(spec.status) ? 2000 : false;
+    },
+  });
+
+  const itemsQuery = useQuery({
+    queryKey: ["specifications", specId, "items"],
+    queryFn: () => api.getSpecificationItems(specId),
+    enabled: specQuery.data?.status === "matched"
+      || specQuery.data?.status === "verified"
+      || specQuery.data?.status === "exported"
+      || specQuery.data?.status === "reviewing",
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data || !data.items) return false;
+      return false;
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: ({
+      specItemId,
+      decision,
+      chosenItemId,
+    }: {
+      specItemId: string;
+      decision: VerificationDecision;
+      chosenItemId?: string | null;
+    }) =>
+      api.verifySpecItem(specId, specItemId, {
+        decision,
+        chosen_item_id: chosenItemId ?? null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({
+        queryKey: ["specifications", specId, "items"],
+      });
+    },
+  });
+
+  const autoConfirmMutation = useMutation({
+    mutationFn: () =>
+      api.autoConfirm(specId, {
+        min_confidence: Number(autoConfirmThreshold),
+        decided_by: "ui",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({
+        queryKey: ["specifications", specId, "items"],
+      });
+    },
+  });
+
+  if (specQuery.isLoading) {
+    return <div className="p-8 text-center text-slate-500">Загрузка…</div>;
+  }
+  if (specQuery.error instanceof Error) {
+    return (
+      <Card>
+        <CardBody>
+          <div className="text-red-600">
+            Ошибка: {specQuery.error.message}
+          </div>
+          <Link to="/specifications">
+            <Button variant="ghost" className="mt-3">
+              ← К списку
+            </Button>
+          </Link>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const spec = specQuery.data;
+  if (!spec) return null;
+
+  const isReady = !isInProgress(spec.status);
+  const items = itemsQuery.data?.items ?? [];
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader
+          title={spec.source_filename}
+          description={
+            <>
+              {spec.client_name && (
+                <span className="mr-3">Клиент: {spec.client_name}</span>
+              )}
+              <span>Загружен: {formatDateTime(spec.created_at)}</span>
+            </>
+          }
+          actions={
+            <Link to="/specifications">
+              <Button variant="ghost">← К списку</Button>
+            </Link>
+          }
+        />
+        <CardBody className="flex flex-wrap items-center gap-6">
+          <div>
+            <div className="text-xs uppercase text-slate-500">Статус</div>
+            <div className="mt-1">
+              <Badge tone={statusTone(spec.status)}>
+                {statusLabel(spec.status)}
+              </Badge>
+            </div>
+          </div>
+
+          {spec.error_message && (
+            <div className="flex-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {spec.error_message}
+            </div>
+          )}
+
+          <div className="grid flex-1 grid-cols-4 gap-4 text-center text-sm">
+            <Counter label="Всего" value={spec.counts.items_total} />
+            <Counter
+              label="≥ 90%"
+              value={spec.counts.items_matched_high}
+              valueClass="text-conf-high"
+            />
+            <Counter
+              label="50–90%"
+              value={spec.counts.items_matched_medium}
+              valueClass="text-conf-medium"
+            />
+            <Counter
+              label="Не найдено"
+              value={spec.counts.items_not_found}
+              valueClass="text-conf-low"
+            />
+          </div>
+        </CardBody>
+      </Card>
+
+      {isReady && (
+        <Card>
+          <CardHeader
+            title="Результаты"
+            description={`${items.length} строк${
+              spec.counts.items_total > items.length
+                ? ` (показаны первые ${items.length})`
+                : ""
+            }`}
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2">
+                  <label
+                    htmlFor="threshold"
+                    className="text-xs text-slate-500"
+                  >
+                    Порог
+                  </label>
+                  <input
+                    id="threshold"
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    value={autoConfirmThreshold}
+                    onChange={(e) => setAutoConfirmThreshold(e.target.value)}
+                    className="w-16 border-none bg-transparent py-1 text-sm focus:outline-none focus:ring-0"
+                  />
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => autoConfirmMutation.mutate()}
+                  disabled={autoConfirmMutation.isPending}
+                >
+                  {autoConfirmMutation.isPending
+                    ? "Подтверждение…"
+                    : "Авто-подтвердить"}
+                </Button>
+                <a
+                  href={api.exportUrl(specId, "xlsx")}
+                  download
+                  className="inline-flex items-center justify-center gap-2 rounded-md bg-slate-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                >
+                  Экспорт XLSX
+                </a>
+                <a
+                  href={api.exportUrl(specId, "csv")}
+                  download
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-900 transition-colors hover:bg-slate-50"
+                >
+                  CSV
+                </a>
+              </div>
+            }
+          />
+
+          {autoConfirmMutation.data && (
+            <div className="border-b border-slate-200 bg-green-50 px-6 py-2 text-sm text-green-900">
+              Подтверждено: <strong>{autoConfirmMutation.data.confirmed_count}</strong>,
+              пропущено уже верифицированных:{" "}
+              <strong>{autoConfirmMutation.data.skipped_already_verified}</strong>,
+              ниже порога: <strong>{autoConfirmMutation.data.skipped_below_threshold}</strong>
+            </div>
+          )}
+          {verifyMutation.isError && (
+            <div className="border-b border-slate-200 bg-red-50 px-6 py-2 text-sm text-red-800">
+              Ошибка верификации:{" "}
+              {verifyMutation.error instanceof ApiError
+                ? `${verifyMutation.error.status}`
+                : (verifyMutation.error as Error)?.message}
+            </div>
+          )}
+
+          {itemsQuery.isLoading ? (
+            <div className="px-6 py-8 text-center text-slate-500">
+              Загрузка строк…
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 font-medium w-12">№</th>
+                    <th className="px-4 py-3 font-medium">Исходная позиция</th>
+                    <th className="px-4 py-3 font-medium w-28">Кол-во</th>
+                    <th className="px-4 py-3 font-medium">Топ кандидат каталога</th>
+                    <th className="px-4 py-3 font-medium w-40">Решение</th>
+                    <th className="px-4 py-3 font-medium w-32" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((item) => (
+                    <SpecItemRow
+                      key={item.id}
+                      item={item}
+                      pending={verifyMutation.isPending}
+                      onVerify={(specItemId, decision, chosenItemId) =>
+                        verifyMutation.mutate({
+                          specItemId,
+                          decision,
+                          chosenItemId,
+                        })
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function Counter({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: number;
+  valueClass?: string;
+}) {
+  return (
+    <div>
+      <div className="text-xs uppercase text-slate-500">{label}</div>
+      <div
+        className={"mt-1 text-2xl font-semibold tabular-nums " + (valueClass ?? "")}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}

@@ -8,12 +8,18 @@
 
 ## Стек (Фаза 1)
 
+**Backend:**
 - Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic
 - PostgreSQL 16 с `pg_trgm` + `tsvector`
 - Celery 5 + Redis 7
 - Парсинг: openpyxl, pandas, chardet
 - Матчинг: rapidfuzz + PostgreSQL FTS
 - Менеджер пакетов: [uv](https://docs.astral.sh/uv/)
+
+**Frontend** (`frontend/`):
+- React 18 + TypeScript + Vite
+- TanStack Query, React Router
+- Tailwind CSS
 
 ## Быстрый старт
 
@@ -35,6 +41,29 @@ docker compose up --build
 curl http://localhost:8000/health        # liveness
 curl http://localhost:8000/health/ready  # readiness: проверяет БД и Redis
 ```
+
+## Frontend (Phase 1 UI)
+
+В отдельном терминале:
+
+```bash
+cd frontend
+npm install
+npm run dev    # http://localhost:5173 — Vite проксирует /api на бэкенд
+```
+
+Сборка для прода:
+
+```bash
+npm run build  # → frontend/dist
+```
+
+Страницы:
+- `/specifications` — список загруженных спецификаций со статусами
+- `/specifications/upload` — drag & drop загрузка
+- `/specifications/{id}` — таблица результатов, верификация, авто-подтверждение, экспорт XLSX/CSV
+- `/catalog` — импорт каталога
+- `/suppliers` — создание поставщика + загрузка прайса
 
 ## Разработка локально (без Docker)
 

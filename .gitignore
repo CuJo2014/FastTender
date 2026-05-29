@@ -42,11 +42,12 @@ Thumbs.db
 uploads/
 /var/lib/fasttender/
 
-# Node / Frontend (на будущее)
+# Node / Frontend
 node_modules/
 dist/
 .cache/
 .parcel-cache/
+*.tsbuildinfo
 
 # Логи
 *.log
