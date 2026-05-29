@@ -36,7 +36,12 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+.env.prod
 !.env.example
+!deploy/.env.prod.example
+
+# Backups
+backups/
 
 # Файлы загрузок
 uploads/

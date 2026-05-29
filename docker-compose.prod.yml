@@ -1,0 +1,159 @@
+# Production stack для FastTender — Phase 1.
+#
+# Особенности относительно dev-стека (docker-compose.yml):
+#   - Caddy как единственный публичный сервис (порты 80+443).
+#     Postgres, Redis, app, worker — на internal network, без host ports.
+#   - Frontend собирается отдельным стейджем (frontend/Dockerfile), его dist
+#     копируется в named volume, который монтирует Caddy.
+#   - Все секреты приходят из .env (см. deploy/.env.prod.example).
+#   - Restart policies: unless-stopped — стек переживает ребут VPS.
+#   - Источники НЕ монтируются bind-mount'ом (никаких --reload).
+#   - uvicorn запускается с N workers.
+#
+# Запуск (на сервере):
+#   cp deploy/.env.prod.example .env.prod
+#   $EDITOR .env.prod                  # заполнить DOMAIN, пароли, BASIC_AUTH_HASH
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ft_prod_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ft_prod_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrations:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_prod_migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FT_ENVIRONMENT: prod
+      FT_DEBUG: "false"
+      FT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_prod_app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      FT_ENVIRONMENT: prod
+      FT_DEBUG: "false"
+      FT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FT_REDIS_URL: redis://redis:6379/0
+      FT_UPLOAD_DIR: /var/lib/fasttender/uploads
+      FT_MAX_UPLOAD_SIZE_MB: ${FT_MAX_UPLOAD_SIZE_MB:-50}
+      # Origins не нужны — Caddy ставит same-origin
+      FT_CORS_ORIGINS: '[]'
+    volumes:
+      - uploads:/var/lib/fasttender/uploads
+    command: >
+      uv run uvicorn fasttender.main:app
+      --host 0.0.0.0 --port 8000
+      --workers ${UVICORN_WORKERS:-2}
+      --proxy-headers --forwarded-allow-ips=*
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ft_prod_worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      FT_ENVIRONMENT: prod
+      FT_DEBUG: "false"
+      FT_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FT_DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      FT_REDIS_URL: redis://redis:6379/0
+      FT_UPLOAD_DIR: /var/lib/fasttender/uploads
+    volumes:
+      - uploads:/var/lib/fasttender/uploads
+    command: >
+      uv run celery -A fasttender.core.celery_app:celery_app worker
+      --loglevel=info --concurrency=${CELERY_CONCURRENCY:-2}
+
+  # «Сборщик» frontend: один раз собирает Vite-build, копирует в shared volume и выходит.
+  # Caddy потом раздаёт эти статические файлы.
+  frontend-build:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ft_prod_frontend_build
+    restart: "no"
+    volumes:
+      - frontend_dist:/srv/frontend
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: ft_prod_caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+      - frontend-build
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+      # bcrypt-хеш пароля basic auth, формат «логин пароль_bcrypt»
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-fasttender}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - frontend_dist:/srv/frontend:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  redis_data:
+  uploads:
+  frontend_dist:
+  caddy_data:
+  caddy_config:

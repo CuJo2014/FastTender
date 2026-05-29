@@ -1,0 +1,77 @@
+# Caddy v2 prod-конфигурация для FastTender (Phase 1).
+#
+# Переменные подставляются из окружения docker-compose (см. docker-compose.prod.yml):
+#   DOMAIN           — публичный hostname (например fasttender.arsenalpro.tech)
+#   CADDY_EMAIL      — email для Let's Encrypt
+#   BASIC_AUTH_USER  — логин для доступа
+#   BASIC_AUTH_HASH  — bcrypt-хеш пароля (генерируется deploy/bootstrap.sh)
+#
+# Поведение:
+#   - HTTP → HTTPS редирект (Caddy делает автоматически при наличии TLS).
+#   - Auto Let's Encrypt при первом запуске (нужно: DNS уже указывает на сервер).
+#   - Basic Auth на всё (раздел 5.3 архитектуры — минимальный порог Phase 1).
+#   - /api/* и /health* → reverse_proxy на FastAPI.
+#   - Всё остальное → статика frontend dist (SPA fallback на index.html).
+#   - HSTS, basic security headers.
+
+{
+	email {$CADDY_EMAIL}
+	# Лог в stdout (docker logs caddy)
+	log {
+		output stdout
+		format console
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# --- Basic auth ---
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+
+	# --- Безопасность ---
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Удаляем server-сигнатуру
+		-Server
+	}
+
+	# --- API + health → FastAPI ---
+	@api {
+		path /api/* /health /health/* /docs /docs/* /openapi.json
+	}
+	handle @api {
+		reverse_proxy app:8000 {
+			# Увеличенные таймауты под крупные XLSX-загрузки
+			transport http {
+				read_timeout 5m
+				write_timeout 5m
+				dial_timeout 10s
+			}
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+
+	# --- Frontend SPA ---
+	# Любой неизвестный путь отдаём index.html (React Router работает на стороне клиента).
+	handle {
+		root * /srv/frontend
+		try_files {path} /index.html
+		file_server
+	}
+
+	# --- Логи ---
+	log {
+		output stdout
+		format console
+		# Не шумим access-логом на статике с долгим кешем; нам интересны 4xx/5xx
+		level INFO
+	}
+}
