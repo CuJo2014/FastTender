@@ -65,7 +65,14 @@ export function CandidatesTable({
                 <td className="px-3 py-2 font-mono text-xs">
                   {cand.article ?? "—"}
                 </td>
-                <td className="px-3 py-2">{cand.name}</td>
+                <td className="px-3 py-2">
+                  {cand.name}
+                  {cand.category_path && (
+                    <div className="mt-0.5 text-xs text-slate-400">
+                      {cand.category_path}
+                    </div>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-slate-600">
                   {cand.manufacturer ?? "—"}
                 </td>

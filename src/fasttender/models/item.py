@@ -41,6 +41,10 @@ class Item(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     manufacturer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     manufacturer_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Иерархия товарных групп из 1С — строка вида «Крепёж / Болты / DIN933».
+    # Phase 1: только хранение, матчер не использует (раздел 4.3 / 9.2 Phase 2).
+    category_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+
     price: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)

@@ -58,6 +58,7 @@ class CandidateRead(BaseModel):
     article: str | None = None
     name: str
     manufacturer: str | None = None
+    category_path: str | None = None  # «Крепёж / Болты / DIN933» из 1С
     price: Decimal | None = None
     currency: str | None = None
     unit: str | None = None

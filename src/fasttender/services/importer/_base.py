@@ -86,6 +86,7 @@ def build_orm_item(source_id: UUID, parsed: ParsedItem) -> Item:
         name_normalized=normalize_name(parsed.name),
         manufacturer=parsed.manufacturer,
         manufacturer_normalized=(parsed.manufacturer.lower() if parsed.manufacturer else None),
+        category_path=parsed.category,
         price=parsed.price,
         currency=parsed.currency,
         unit=parsed.unit,
@@ -141,6 +142,7 @@ async def upsert_items(
             target.manufacturer_normalized = (
                 item.manufacturer.lower() if item.manufacturer else None
             )
+            target.category_path = item.category
             target.price = item.price
             target.currency = item.currency
             target.unit = item.unit

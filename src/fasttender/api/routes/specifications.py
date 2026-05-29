@@ -232,6 +232,7 @@ async def get_specification_items(
                 article=cand.item.article_raw,
                 name=cand.item.name,
                 manufacturer=cand.item.manufacturer,
+                category_path=cand.item.category_path,
                 price=cand.item.price,
                 currency=cand.item.currency,
                 unit=cand.item.unit,

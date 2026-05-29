@@ -85,6 +85,7 @@ def _extract_items(
 
         article = clean_string(_cell(row, mapping.get(SpecField.ARTICLE)))
         manufacturer = clean_string(_cell(row, mapping.get(SpecField.MANUFACTURER)))
+        category = clean_string(_cell(row, mapping.get(SpecField.CATEGORY)))
         unit = clean_string(_cell(row, mapping.get(SpecField.UNIT)))
         currency = clean_string(_cell(row, mapping.get(SpecField.CURRENCY)))
         delivery_term = clean_string(_cell(row, mapping.get(SpecField.DELIVERY_TERM)))
@@ -124,6 +125,7 @@ def _extract_items(
                 name=name,
                 article=article,
                 manufacturer=manufacturer,
+                category=category,
                 quantity=quantity,
                 unit=unit,
                 price=price,

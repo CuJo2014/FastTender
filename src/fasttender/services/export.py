@@ -51,6 +51,7 @@ HEADERS = (
     "Цена клиента",
     "Решение",
     "Источник",
+    "Категория каталога",
     "Артикул выбранной",
     "Наименование выбранной",
     "Производитель выбранной",
@@ -137,6 +138,7 @@ async def _collect_rows(session: AsyncSession, spec_id: UUID) -> list[dict[str, 
                 "price_raw": _format_decimal(spec_item.price_raw),
                 "decision": decision_label,
                 "source": _source_label(chosen_item),
+                "category_path": chosen_item.category_path if chosen_item else None,
                 "chosen_article": chosen_item.article_raw if chosen_item else None,
                 "chosen_name": chosen_item.name if chosen_item else None,
                 "chosen_manufacturer": chosen_item.manufacturer if chosen_item else None,
@@ -266,24 +268,25 @@ def _to_xlsx(rows: list[dict[str, Any]], spec: Specification) -> bytes:
 
     # Авто-ширина (грубо)
     widths = [
-        4,
-        35,
-        18,
-        18,
-        8,
-        8,
-        12,
-        18,
-        22,
-        18,
-        35,
-        18,
-        12,
-        8,
-        8,
-        10,
-        14,
-        30,
+        4,  # №
+        35,  # Наименование (клиент)
+        18,  # Артикул (клиент)
+        18,  # Производитель (клиент)
+        8,  # Кол-во
+        8,  # Ед. изм.
+        12,  # Цена клиента
+        18,  # Решение
+        22,  # Источник
+        28,  # Категория каталога (новая)
+        18,  # Артикул выбранной
+        35,  # Наименование выбранной
+        18,  # Производитель выбранной
+        12,  # Цена
+        8,  # Валюта
+        8,  # Ед. изм. выбранной
+        10,  # Confidence
+        14,  # Тип совпадения
+        30,  # Примечание
     ]
     from openpyxl.utils import get_column_letter
 
@@ -320,6 +323,7 @@ def _row_to_tuple(row: dict[str, Any]) -> tuple[Any, ...]:
         row["price_raw"],
         row["decision"],
         row["source"],
+        row["category_path"],
         row["chosen_article"],
         row["chosen_name"],
         row["chosen_manufacturer"],

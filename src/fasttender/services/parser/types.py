@@ -15,11 +15,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SpecField(StrEnum):
-    """Логические поля строки спецификации (раздел 4.1.3)."""
+    """Логические поля строки спецификации (раздел 4.1.3).
+
+    CATEGORY используется в основном при импорте каталога/прайса
+    (иерархия групп товаров из 1С). В спецификациях клиента обычно
+    отсутствует.
+    """
 
     NAME = "name"
     ARTICLE = "article"
     MANUFACTURER = "manufacturer"
+    CATEGORY = "category"
     QUANTITY = "quantity"
     UNIT = "unit"
     PRICE = "price"
@@ -64,6 +70,7 @@ class ParsedItem(BaseModel):
     name: str
     article: str | None = None
     manufacturer: str | None = None
+    category: str | None = None  # путь иерархии «Крепёж / Болты / DIN933»
     quantity: Decimal | None = None
     unit: str | None = None
     price: Decimal | None = None

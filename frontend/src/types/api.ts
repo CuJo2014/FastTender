@@ -77,6 +77,7 @@ export interface CandidateRead {
   article: string | null;
   name: string;
   manufacturer: string | null;
+  category_path: string | null;
   price: string | null; // Decimal сериализуется в строку
   currency: string | null;
   unit: string | null;
