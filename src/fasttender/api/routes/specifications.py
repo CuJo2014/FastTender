@@ -1,10 +1,13 @@
 """Спецификации (раздел 4, Приложение C.4).
 
 Phase 1:
-  POST /specifications/             — загрузка файла, 202 + spec_id
-  GET  /specifications/             — список с агрегатами
-  GET  /specifications/{id}         — статус + счётчики
-  GET  /specifications/{id}/items   — пагинированный список строк с кандидатами
+  POST /specifications/                                 — загрузка файла, 202 + spec_id
+  GET  /specifications/                                 — список с агрегатами
+  GET  /specifications/{id}                             — статус + счётчики
+  GET  /specifications/{id}/items                       — строки с кандидатами
+  POST /specifications/{id}/items/{spec_item_id}/verify — решение по строке
+  POST /specifications/{id}/auto-confirm                — массовое авто-подтверждение
+  GET  /specifications/{id}/export                      — выгрузка XLSX/CSV
 
 Реальная обработка — в Celery-задаче `fasttender.process_specification`,
 которая дёргается из POST. Если воркер недоступен — спец останется в
@@ -17,6 +20,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,7 +45,15 @@ from fasttender.schemas.specification import (
     SpecItemRead,
     VerificationRead,
 )
+from fasttender.schemas.verification import (
+    AutoConfirmRequest,
+    AutoConfirmResponse,
+    VerifyRequest,
+    VerifyResponse,
+)
+from fasttender.services.export import ExportFormat, build_export
 from fasttender.services.parser import SpecificationParser
+from fasttender.services.verification import VerificationError, VerificationService
 from fasttender.tasks.process import process_specification
 
 router = APIRouter(prefix="/specifications", tags=["specifications"])
@@ -274,6 +286,123 @@ async def get_specification_items(
         total=int(total or 0),
         page=page,
         page_size=page_size,
+    )
+
+
+# --- Верификация (раздел 4.7) ---
+
+
+@router.post(
+    "/{spec_id}/items/{spec_item_id}/verify",
+    response_model=VerifyResponse,
+    summary="Решение менеджера по строке",
+)
+async def verify_spec_item(
+    spec_id: UUID,
+    spec_item_id: UUID,
+    payload: VerifyRequest,
+    session: AsyncSession = Depends(get_session),
+) -> VerifyResponse:
+    service = VerificationService(session)
+    try:
+        verification = await service.upsert(
+            spec_id=spec_id,
+            spec_item_id=spec_item_id,
+            decision=payload.decision,
+            chosen_item_id=payload.chosen_item_id,
+            notes=payload.notes,
+            decided_by=payload.decided_by,
+        )
+    except VerificationError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": str(exc)},
+        ) from exc
+
+    await session.commit()
+    await session.refresh(verification)
+
+    return VerifyResponse(
+        spec_item_id=verification.spec_item_id,
+        decision=verification.decision,
+        chosen_item_id=verification.chosen_item_id,
+        decided_by=verification.decided_by,
+        notes=verification.notes,
+        decided_at=verification.updated_at,
+    )
+
+
+@router.post(
+    "/{spec_id}/auto-confirm",
+    response_model=AutoConfirmResponse,
+    summary="Массовое авто-подтверждение всех строк с confidence ≥ порога",
+)
+async def auto_confirm_specification(
+    spec_id: UUID,
+    payload: AutoConfirmRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> AutoConfirmResponse:
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+
+    settings = get_settings()
+    payload = payload or AutoConfirmRequest()
+    threshold = (
+        payload.min_confidence
+        if payload.min_confidence is not None
+        else settings.confidence_auto_confirm
+    )
+
+    service = VerificationService(session)
+    confirmed, skipped_existing, skipped_low = await service.auto_confirm(
+        spec_id=spec_id,
+        min_confidence=threshold,
+        decided_by=payload.decided_by,
+        only_unverified=payload.only_unverified,
+    )
+    await session.commit()
+
+    return AutoConfirmResponse(
+        confirmed_count=confirmed,
+        skipped_already_verified=skipped_existing,
+        skipped_below_threshold=skipped_low,
+        threshold_used=threshold,
+    )
+
+
+# --- Экспорт (раздел 4.8) ---
+
+
+@router.get(
+    "/{spec_id}/export",
+    summary="Выгрузка результатов в XLSX или CSV",
+)
+async def export_specification(
+    spec_id: UUID,
+    fmt: ExportFormat = Query(ExportFormat.XLSX, alias="format"),
+    session: AsyncSession = Depends(get_session),
+) -> StreamingResponse:
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+
+    content, content_type, filename = await build_export(session, spec, fmt)
+
+    return StreamingResponse(
+        iter([content]),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(len(content)),
+        },
     )
 
 
