@@ -173,6 +173,7 @@ def score_candidate(
         source_id=agg.hit.source_id,
         source_type=agg.hit.source_type,
         article=agg.hit.article_raw,
+        code_1c=agg.hit.code_1c,
         name=agg.hit.name,
         manufacturer=agg.hit.manufacturer,
         price=agg.hit.price,

@@ -84,6 +84,7 @@ def _extract_items(
         line_number += 1
 
         article = clean_string(_cell(row, mapping.get(SpecField.ARTICLE)))
+        code_1c = clean_string(_cell(row, mapping.get(SpecField.CODE_1C)))
         manufacturer = clean_string(_cell(row, mapping.get(SpecField.MANUFACTURER)))
         category = clean_string(_cell(row, mapping.get(SpecField.CATEGORY)))
         unit = clean_string(_cell(row, mapping.get(SpecField.UNIT)))
@@ -124,6 +125,7 @@ def _extract_items(
                 line_number=line_number,
                 name=name,
                 article=article,
+                code_1c=code_1c,
                 manufacturer=manufacturer,
                 category=category,
                 quantity=quantity,

@@ -24,6 +24,7 @@ class SpecField(StrEnum):
 
     NAME = "name"
     ARTICLE = "article"
+    CODE_1C = "code_1c"  # внутренний код 1С (отличается от Артикула)
     MANUFACTURER = "manufacturer"
     CATEGORY = "category"
     QUANTITY = "quantity"
@@ -69,6 +70,7 @@ class ParsedItem(BaseModel):
     line_number: int = Field(..., ge=1, description="Порядковый номер строки в исходнике (1-based)")
     name: str
     article: str | None = None
+    code_1c: str | None = None  # код номенклатуры из 1С
     manufacturer: str | None = None
     category: str | None = None  # путь иерархии «Крепёж / Болты / DIN933»
     quantity: Decimal | None = None

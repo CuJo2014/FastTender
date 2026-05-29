@@ -82,6 +82,7 @@ def build_orm_item(source_id: UUID, parsed: ParsedItem) -> Item:
         source_id=source_id,
         article_raw=parsed.article,
         article_normalized=normalize_article(parsed.article),
+        code_1c=parsed.code_1c,
         name=parsed.name,
         name_normalized=normalize_name(parsed.name),
         manufacturer=parsed.manufacturer,
@@ -136,6 +137,7 @@ async def upsert_items(
         target = existing.get(article_norm) if article_norm else None
         if target is not None:
             target.article_raw = item.article
+            target.code_1c = item.code_1c
             target.name = item.name
             target.name_normalized = normalize_name(item.name)
             target.manufacturer = item.manufacturer

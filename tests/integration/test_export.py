@@ -91,8 +91,10 @@ async def test_xlsx_export_has_headers_and_data(session: AsyncSession, tmp_path:
     assert "Каталог" in line1[8]  # source label
     # line1[9] = category_path; в seed-каталоге без категории → None
     assert line1[9] is None
-    assert line1[11] == "Болт М10х40 DIN933"  # chosen_name (index 11 после Категории)
-    assert float(line1[16]) >= 0.95  # confidence (index 16)
+    # line1[11] = chosen_code_1c (None в тестовом каталоге)
+    assert line1[11] is None
+    assert line1[12] == "Болт М10х40 DIN933"  # chosen_name
+    assert float(line1[17]) >= 0.95  # confidence
 
     # Третья — ZZZ-NOPE, нет catalog кандидатов
     line3 = data_rows[2]
@@ -131,10 +133,10 @@ async def test_xlsx_export_uses_verification_when_present(
     data_rows = rows[rows.index(header_row) + 1 :]
     line1 = data_rows[0]
     assert line1[7] == "Подтверждено"
-    # Менеджер выбрал гайку, не болт. Индексы сдвинулись на 1 после
-    # вставки колонки «Категория каталога» в позицию 9.
-    assert line1[11] == "Гайка М10 DIN934"  # chosen_name
-    assert line1[18] == "Заменили на гайку"  # notes
+    # Индексы сдвинуты на 2 после вставки «Категория каталога» (9) и
+    # «Код 1С» (11). chosen_name теперь в позиции 12, notes — 19.
+    assert line1[12] == "Гайка М10 DIN934"  # chosen_name
+    assert line1[19] == "Заменили на гайку"  # notes
     wb.close()
 
 
@@ -161,7 +163,7 @@ async def test_xlsx_export_marks_not_found_for_rejected(
     data_rows = rows[rows.index(header_row) + 1 :]
     line3 = data_rows[2]
     assert line3[7] == "Не найдено (отметка менеджера)"
-    assert line3[11] is None  # chosen_name пуст (index сдвинулся после вставки Категории)
+    assert line3[12] is None  # chosen_name пуст (индекс сдвинут на 2)
     wb.close()
 
 

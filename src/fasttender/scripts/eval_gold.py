@@ -70,16 +70,25 @@ COLUMN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "quantity": ("кол-во", "количество", "к-во"),
     "unit": ("ед. изм.", "ед.изм", "ед изм", "единица"),
     "expected_article": ("→ правильный артикул каталога", "правильный артикул", "артикул каталога"),
+    "expected_code_1c": (
+        "→ код 1с каталога",
+        "→ правильный код 1с",
+        "правильный код 1с",
+        "код 1с каталога",
+        "код каталога",
+    ),
     "expected_name": ("→ правильное наименование каталога", "правильное наименование"),
     "label_status": ("статус разметки", "статус"),
     "labeler_notes": ("примечание разметчика", "примечание"),
     "result_article": ("результат матчера: артикул", "результат: артикул"),
+    "result_code_1c": ("результат матчера: код 1с", "результат: код 1с"),
     "result_confidence": ("результат матчера: уверенность", "результат: уверенность"),
     "result_matched": ("совпало? (да/нет)", "совпало"),
 }
 
-REQUIRED_COLUMNS = ("name", "expected_article", "label_status")
-RESULT_COLUMNS = ("result_article", "result_confidence", "result_matched")
+# expected_article ИЛИ expected_code_1c достаточно — хотя бы один identifier
+REQUIRED_COLUMNS = ("name", "label_status")
+RESULT_COLUMNS = ("result_article", "result_code_1c", "result_confidence", "result_matched")
 
 # Допустимые значения «Статус разметки»
 STATUS_FOUND = {"найдено", "найден"}
@@ -105,6 +114,7 @@ class GoldRow:
     quantity: str | None
     unit: str | None
     expected_article: str | None
+    expected_code_1c: str | None  # альтернативный identifier когда артикула нет
     expected_name: str | None
     label_status: str
     labeler_notes: str | None
@@ -112,6 +122,11 @@ class GoldRow:
     @property
     def expected_article_normalized(self) -> str | None:
         return normalize_article(self.expected_article)
+
+    @property
+    def has_expected_identifier(self) -> bool:
+        """Хотя бы один identifier (артикул или код 1С) задан."""
+        return bool(self.expected_article_normalized) or bool(self.expected_code_1c)
 
 
 @dataclass
@@ -121,8 +136,9 @@ class RowOutcome:
     row: GoldRow
     match_result: MatchResult
     top_articles_normalized: list[str]  # top-K catalog articles, normalized
-    expected_rank: int | None  # 1-based позиция expected в top-K; None если не в топе
-    matched: bool  # точное совпадение top-1
+    top_codes_1c: list[str]  # top-K catalog code_1c (raw, без нормализации)
+    expected_rank: int | None  # 1-based позиция expected в top-K по любому из identifier'ов
+    matched: bool  # точное совпадение top-1 по любому из identifier'ов
 
 
 @dataclass
@@ -253,6 +269,9 @@ def read_rows(ws: Worksheet, header_row: int, mapping: dict[str, int]) -> list[G
                 expected_article=clean_string(
                     _cell(ws, sheet_row, mapping.get("expected_article"))
                 ),
+                expected_code_1c=clean_string(
+                    _cell(ws, sheet_row, mapping.get("expected_code_1c"))
+                ),
                 expected_name=clean_string(_cell(ws, sheet_row, mapping.get("expected_name"))),
                 label_status=(
                     clean_string(_cell(ws, sheet_row, mapping.get("label_status"))) or ""
@@ -322,21 +341,46 @@ async def run_matcher(rows: list[GoldRow], top_k: int) -> list[RowOutcome]:
     outcomes: list[RowOutcome] = []
     for row, result in zip(rows, results, strict=True):
         top_articles = [normalize_article(c.article) or "" for c in result.catalog]
-        expected = row.expected_article_normalized
-        rank = None
-        if expected and expected in top_articles:
-            rank = top_articles.index(expected) + 1
-        matched = bool(top_articles and expected is not None and top_articles[0] == expected)
+        top_codes = [c.code_1c or "" for c in result.catalog]
+
+        expected_art = row.expected_article_normalized
+        expected_code = (row.expected_code_1c or "").strip()
+
+        rank = _first_match_rank(top_articles, top_codes, expected_art, expected_code)
+        matched = rank == 1
+
         outcomes.append(
             RowOutcome(
                 row=row,
                 match_result=result,
                 top_articles_normalized=top_articles,
+                top_codes_1c=top_codes,
                 expected_rank=rank,
                 matched=matched,
             )
         )
     return outcomes
+
+
+def _first_match_rank(
+    top_articles: list[str],
+    top_codes: list[str],
+    expected_article: str | None,
+    expected_code: str,
+) -> int | None:
+    """Возвращает 1-based ранг первого попадания по любому из identifier'ов.
+
+    Совпадение засчитывается если на позиции K либо article_normalized совпал
+    с expected_article (нормализованным), либо code_1c совпал с expected_code.
+    """
+    if not expected_article and not expected_code:
+        return None
+    for idx in range(len(top_articles)):
+        if expected_article and top_articles[idx] == expected_article:
+            return idx + 1
+        if expected_code and idx < len(top_codes) and top_codes[idx] == expected_code:
+            return idx + 1
+    return None
 
 
 # --- Метрики ---
@@ -360,8 +404,9 @@ def compute_metrics(
             continue
 
         if status in STATUS_FOUND or status in STATUS_ANALOG:
-            if not outcome.row.expected_article_normalized:
-                # Размечено как «найдено», но артикул не указан — пропускаем
+            if not outcome.row.has_expected_identifier:
+                # Размечено как «найдено», но ни Артикул, ни Код 1С не указан —
+                # такую строку нельзя соотнести с каталогом, пропускаем
                 metrics.skipped_unsure += 1
                 continue
             metrics.applicable += 1
@@ -386,6 +431,7 @@ def compute_metrics(
 def write_results(ws: Worksheet, mapping: dict[str, int], outcomes: list[RowOutcome]) -> None:
     """Заполняет колонки M-O (Результат: артикул/уверенность/Совпало) для каждой строки."""
     article_col = mapping.get("result_article")
+    code_col = mapping.get("result_code_1c")
     confidence_col = mapping.get("result_confidence")
     matched_col = mapping.get("result_matched")
 
@@ -397,6 +443,12 @@ def write_results(ws: Worksheet, mapping: dict[str, int], outcomes: list[RowOutc
                 column=article_col,
                 value=top.article if top else None,
             )
+        if code_col:
+            ws.cell(
+                row=outcome.row.sheet_row,
+                column=code_col,
+                value=top.code_1c if top else None,
+            )
         if confidence_col:
             ws.cell(
                 row=outcome.row.sheet_row,
@@ -404,7 +456,7 @@ def write_results(ws: Worksheet, mapping: dict[str, int], outcomes: list[RowOutc
                 value=float(top.confidence) if top else None,
             )
         if matched_col:
-            if not outcome.row.expected_article_normalized:
+            if not outcome.row.has_expected_identifier:
                 cell_value = ""
             else:
                 cell_value = "да" if outcome.matched else "нет"

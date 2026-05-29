@@ -35,6 +35,10 @@ class Item(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     article_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
     article_normalized: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
 
+    # Внутренний код 1С (отдельно от Артикула — см. миграцию 0005).
+    # Всегда заполнен для импорта из 1С, гарантированно уникален.
+    code_1c: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     name: Mapped[str] = mapped_column(String(1024), nullable=False)
     name_normalized: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 

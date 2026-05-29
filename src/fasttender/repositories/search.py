@@ -51,6 +51,7 @@ class SearchHit(BaseModel):
 
     article_raw: str | None = None
     article_normalized: str | None = None
+    code_1c: str | None = None
     name: str
     name_normalized: str | None = None
     manufacturer: str | None = None

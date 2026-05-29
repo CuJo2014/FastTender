@@ -39,19 +39,28 @@ COLUMN_SYNONYMS: dict[SpecField, tuple[str, ...]] = {
         "product",
     ),
     SpecField.ARTICLE: (
+        # NB: «код»/«код товара» вынесены в SpecField.CODE_1C —
+        # это разные сущности в 1С (Артикул vs Код номенклатуры).
         "артикул",
-        "код",
         "арт",
         "арт.",
         "sku",
         "номер",
-        "код товара",
         "артикул товара",
         "артикул производителя",
         "article",
-        "code",
         "part number",
         "p/n",
+    ),
+    SpecField.CODE_1C: (
+        "код",
+        "код 1с",
+        "код1с",
+        "код товара",
+        "код номенклатуры",
+        "код в 1с",
+        "code 1c",
+        "1c code",
     ),
     SpecField.MANUFACTURER: (
         "производитель",
@@ -137,6 +146,7 @@ COLUMN_SYNONYMS: dict[SpecField, tuple[str, ...]] = {
 # «цена за единицу» не схватилась как UNIT по слову «единицу».
 _FIELD_PRIORITY: tuple[SpecField, ...] = (
     SpecField.ARTICLE,
+    SpecField.CODE_1C,
     SpecField.NAME,
     SpecField.MANUFACTURER,
     SpecField.CATEGORY,

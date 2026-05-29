@@ -56,6 +56,7 @@ class CandidateRead(BaseModel):
     source_type: DataSourceType
 
     article: str | None = None
+    code_1c: str | None = None  # внутренний код 1С — стабильный идентификатор
     name: str
     manufacturer: str | None = None
     category_path: str | None = None  # «Крепёж / Болты / DIN933» из 1С

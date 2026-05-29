@@ -69,6 +69,7 @@ class Candidate(BaseModel):
     source_type: DataSourceType
 
     article: str | None = None  # article_raw для UI
+    code_1c: str | None = None
     name: str
     manufacturer: str | None = None
     price: Decimal | None = None

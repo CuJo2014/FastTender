@@ -75,6 +75,7 @@ export interface CandidateRead {
   source_id: string;
   source_type: DataSourceType;
   article: string | null;
+  code_1c: string | null;
   name: string;
   manufacturer: string | null;
   category_path: string | null;

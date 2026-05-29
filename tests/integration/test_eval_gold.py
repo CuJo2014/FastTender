@@ -67,10 +67,12 @@ GOLD_HEADERS = (
     "Кол-во",
     "Ед. изм.",
     "→ Правильный артикул каталога",
+    "→ Код 1С каталога",
     "→ Правильное наименование каталога",
     "Статус разметки",
     "Примечание разметчика",
     "Результат матчера: артикул",
+    "Результат матчера: Код 1С",
     "Результат матчера: уверенность",
     "Совпало? (да/нет)",
 )
@@ -79,7 +81,8 @@ GOLD_HEADERS = (
 def make_gold_xlsx(path: Path, data_rows: list[tuple]) -> Path:
     """Создаёт XLSX с точной копией структуры реального шаблона.
 
-    data_rows — кортежи длиной 12 (без 3-х колонок результата, они пустые).
+    data_rows — кортежи длиной 13 (12 «человеческих» + expected_code_1c).
+    Колонки результата (M-Q, индексы 14-17) заполняет evaluator.
     """
     wb = openpyxl.Workbook()
     # «Инструкция» можно пропустить — рабочий лист один
@@ -89,16 +92,21 @@ def make_gold_xlsx(path: Path, data_rows: list[tuple]) -> Path:
     # R1 — групповые лейблы (только для визуального соответствия, парсер не читает)
     ws.cell(row=1, column=2, value="ИСХОДНЫЕ ДАННЫЕ (как в спецификации клиента)")
     ws.cell(row=1, column=9, value="ЭТАЛОННАЯ РАЗМЕТКА")
-    ws.cell(row=1, column=13, value="РЕЗУЛЬТАТ ПРОГОНА")
+    ws.cell(row=1, column=14, value="РЕЗУЛЬТАТ ПРОГОНА")
 
     # R2 — реальная шапка
     for c_idx, header in enumerate(GOLD_HEADERS, start=1):
         ws.cell(row=2, column=c_idx, value=header)
 
-    # Данные с R3 — 12 заполненных колонок, 3 пустых (M-O будут заполнены evaluator'ом)
+    # Данные с R3 — 13 заполненных колонок (12 input + expected_code_1c).
+    # Колонки результата (M-Q) заполняет evaluator.
+    # Backward-compat: если row длиной 12 (старый формат без expected_code_1c),
+    # добавляем None после expected_article (8-й элемент кортежа).
     for r_offset, row in enumerate(data_rows, start=3):
-        if len(row) != 12:
-            raise ValueError(f"Ожидаются 12 колонок данных, получено {len(row)}")
+        if len(row) == 12:
+            row = (*row[:9], None, *row[9:])
+        if len(row) != 13:
+            raise ValueError(f"Ожидаются 12 или 13 колонок данных, получено {len(row)}")
         for c_idx, value in enumerate(row, start=1):
             ws.cell(row=r_offset, column=c_idx, value=value)
 
@@ -166,19 +174,22 @@ def test_detect_columns_real_template_layout(tmp_path: Path) -> None:
         "quantity",
         "unit",
         "expected_article",
+        "expected_code_1c",
         "expected_name",
         "label_status",
         "labeler_notes",
         "result_article",
+        "result_code_1c",
         "result_confidence",
         "result_matched",
     }
     assert set(mapping.keys()) == expected_fields
-    # Позиции совпадают с реальным шаблоном
+    # Позиции совпадают с реальным шаблоном (17 колонок, code_1c вставлен)
     assert mapping["name"] == 3
     assert mapping["attributes"] == 6
     assert mapping["expected_article"] == 9
-    assert mapping["result_article"] == 13
+    assert mapping["expected_code_1c"] == 10
+    assert mapping["result_article"] == 14
 
 
 def test_read_rows_skips_empty_names(tmp_path: Path) -> None:
@@ -347,20 +358,20 @@ async def test_e2e_eval_run_computes_metrics(
     assert "Метрики" in wb_out.sheetnames
 
     ws = wb_out["Датасет"]
-    # Колонки результата заполнены
+    # Колонки результата (14 article, 15 code_1c, 16 confidence, 17 matched)
     # row 3 (sheet row) — это row data #1 (Болт М10х40 точное)
-    assert ws.cell(row=3, column=13).value == "BLT-M10-040-ZN"
-    assert float(ws.cell(row=3, column=14).value) >= 0.95
-    assert ws.cell(row=3, column=15).value == "да"
+    assert ws.cell(row=3, column=14).value == "BLT-M10-040-ZN"
+    assert float(ws.cell(row=3, column=16).value) >= 0.95
+    assert ws.cell(row=3, column=17).value == "да"
 
     # row 5 (sheet row) — это data #3 (Шайба, ждут болт М10х50)
     # Матчер по WSH-M10 даст шайбу top-1; совпало = «нет»
-    assert ws.cell(row=5, column=13).value == "WSH-M10"
-    assert ws.cell(row=5, column=15).value == "нет"
+    assert ws.cell(row=5, column=14).value == "WSH-M10"
+    assert ws.cell(row=5, column=17).value == "нет"
 
     # row 6 (sheet row) — это data #4 (Странный товар, не найдено)
     # expected пуст → совпало = пустая ячейка (None или "")
-    assert ws.cell(row=6, column=15).value in (None, "")
+    assert ws.cell(row=6, column=17).value in (None, "")
 
     # Лист «Метрики» содержит Recall@K
     metrics_ws = wb_out["Метрики"]

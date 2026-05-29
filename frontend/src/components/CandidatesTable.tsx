@@ -64,6 +64,11 @@ export function CandidatesTable({
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {cand.article ?? "—"}
+                  {cand.code_1c && (
+                    <div className="mt-0.5 font-sans text-[10px] text-slate-400">
+                      1С: {cand.code_1c}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   {cand.name}
