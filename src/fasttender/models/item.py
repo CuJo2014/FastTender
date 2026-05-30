@@ -64,6 +64,26 @@ class Item(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
+    # Связка прайс-позиции с карточкой каталога компании (миграция 0008).
+    # Прайс-позиция может представлять тот же физический товар что и в
+    # каталоге — даём ссылку на каталог-карточку чтобы менеджер видел
+    # сразу обе стороны.
+    linked_catalog_item_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("item.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # 'auto' — определено импортером, 'manual' — выбор менеджера (не
+    # перетирается при re-import). NULL = не связано.
+    catalog_link_source: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+    linked_catalog_item: Mapped["Item | None"] = relationship(
+        "Item",
+        remote_side="Item.id",
+        foreign_keys=[linked_catalog_item_id],
+        lazy="joined",
+    )
+
     source: Mapped["DataSource"] = relationship(back_populates="items")
 
     def __repr__(self) -> str:

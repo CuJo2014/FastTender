@@ -95,8 +95,10 @@ async def test_xlsx_export_has_headers_and_data(session: AsyncSession, tmp_path:
     assert line1[11] is None
     # line1[12] = chosen_supplier_sku (None для каталога)
     assert line1[12] is None
-    assert line1[13] == "Болт М10х40 DIN933"  # chosen_name
-    assert float(line1[18]) >= 0.95  # confidence (индекс +1 после Внутр. ID)
+    # line1[13] = chosen_linked_catalog (None для каталог-позиции)
+    assert line1[13] is None
+    assert line1[14] == "Болт М10х40 DIN933"  # chosen_name (+1 от 0008)
+    assert float(line1[19]) >= 0.95  # confidence
 
     # Третья — ZZZ-NOPE, нет catalog кандидатов
     line3 = data_rows[2]
@@ -135,10 +137,10 @@ async def test_xlsx_export_uses_verification_when_present(
     data_rows = rows[rows.index(header_row) + 1 :]
     line1 = data_rows[0]
     assert line1[7] == "Подтверждено"
-    # Индексы после миграции 0007 (добавлен «Внутренний ID» в позиции 12):
-    # chosen_name теперь в позиции 13, notes — 20.
-    assert line1[13] == "Гайка М10 DIN934"  # chosen_name
-    assert line1[20] == "Заменили на гайку"  # notes
+    # Индексы после миграции 0008 (добавлена «Карточка каталога» в позиции 13):
+    # chosen_name теперь в позиции 14, notes — 21.
+    assert line1[14] == "Гайка М10 DIN934"  # chosen_name
+    assert line1[21] == "Заменили на гайку"  # notes
     wb.close()
 
 
@@ -165,7 +167,7 @@ async def test_xlsx_export_marks_not_found_for_rejected(
     data_rows = rows[rows.index(header_row) + 1 :]
     line3 = data_rows[2]
     assert line3[7] == "Не найдено (отметка менеджера)"
-    assert line3[13] is None  # chosen_name пуст (индекс сдвинут на 3 после 0007)
+    assert line3[14] is None  # chosen_name пуст (индекс сдвинут на 4 после 0008)
     wb.close()
 
 

@@ -55,6 +55,7 @@ HEADERS = (
     "Артикул выбранной",
     "Код 1С",
     "Внутренний ID",
+    "Карточка каталога",
     "Наименование выбранной",
     "Производитель выбранной",
     "Цена",
@@ -115,10 +116,16 @@ async def _collect_rows(session: AsyncSession, spec_id: UUID) -> list[dict[str, 
                 .selectinload(MatchCandidate.item)
                 .selectinload(Item.source)
                 .selectinload(DataSource.supplier),
+                selectinload(SpecItem.candidates)
+                .selectinload(MatchCandidate.item)
+                .joinedload(Item.linked_catalog_item),
                 selectinload(SpecItem.verification)
                 .selectinload(Verification.chosen_item)
                 .selectinload(Item.source)
                 .selectinload(DataSource.supplier),
+                selectinload(SpecItem.verification)
+                .selectinload(Verification.chosen_item)
+                .joinedload(Item.linked_catalog_item),
             )
         )
     ).all()
@@ -144,6 +151,7 @@ async def _collect_rows(session: AsyncSession, spec_id: UUID) -> list[dict[str, 
                 "chosen_article": chosen_item.article_raw if chosen_item else None,
                 "chosen_code_1c": chosen_item.code_1c if chosen_item else None,
                 "chosen_supplier_sku": chosen_item.supplier_sku if chosen_item else None,
+                "chosen_linked_catalog": _linked_catalog_label(chosen_item),
                 "chosen_name": chosen_item.name if chosen_item else None,
                 "chosen_manufacturer": chosen_item.manufacturer if chosen_item else None,
                 "chosen_price": _format_decimal(chosen_item.price) if chosen_item else None,
@@ -213,6 +221,16 @@ def _match_type_for(spec_item: SpecItem, chosen_item: Item | None) -> str | None
         if c.item_id == chosen_item.id:
             return c.match_type.value
     return None
+
+
+def _linked_catalog_label(item: Item | None) -> str | None:
+    """Если у item есть связь с каталогом — возвращаем Код 1С (или артикул)
+    каталог-карточки. Иначе None.
+    """
+    if item is None or item.linked_catalog_item is None:
+        return None
+    cat = item.linked_catalog_item
+    return cat.code_1c or cat.article_raw
 
 
 def _source_label(item: Item | None) -> str | None:
@@ -285,6 +303,7 @@ def _to_xlsx(rows: list[dict[str, Any]], spec: Specification) -> bytes:
         18,  # Артикул выбранной
         16,  # Код 1С
         14,  # Внутренний ID
+        18,  # Карточка каталога
         35,  # Наименование выбранной
         18,  # Производитель выбранной
         12,  # Цена
@@ -333,6 +352,7 @@ def _row_to_tuple(row: dict[str, Any]) -> tuple[Any, ...]:
         row["chosen_article"],
         row["chosen_code_1c"],
         row["chosen_supplier_sku"],
+        row["chosen_linked_catalog"],
         row["chosen_name"],
         row["chosen_manufacturer"],
         row["chosen_price"],

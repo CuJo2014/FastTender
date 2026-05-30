@@ -70,6 +70,103 @@ def _item_dedupe_key(item: Item) -> tuple[str, str] | None:
     return ("article", art)
 
 
+async def auto_link_to_catalog(session: AsyncSession, source_id: UUID) -> int:
+    """Для каждой активной pricelist-позиции находит карточку в каталоге
+    компании и проставляет ссылку. Позиции с `catalog_link_source = 'manual'`
+    не трогаем — выбор менеджера приоритетен.
+
+    Lookup priority (как в _item_dedupe_key):
+      1. code_1c (точное совпадение)
+      2. (article_normalized, manufacturer_normalized.lower())
+      3. article_normalized
+
+    Bulk-loading: каталог загружается один раз в Python-словари — для прайса
+    в 8K позиций и каталога в 100K это ~2 секунды против N запросов.
+
+    Возвращает количество позиций которым удалось проставить (или обновить)
+    ссылку.
+    """
+    from fasttender.models import DataSource, DataSourceType
+
+    catalog_source_id = await session.scalar(
+        select(DataSource.id).where(DataSource.type == DataSourceType.COMPANY_CATALOG)
+    )
+    if catalog_source_id is None:
+        return 0  # каталог компании ещё не загружен — нечего связывать
+
+    catalog_items = (
+        await session.scalars(
+            select(Item).where(
+                Item.source_id == catalog_source_id,
+                Item.is_active.is_(True),
+            )
+        )
+    ).all()
+
+    by_code: dict[str, Item] = {}
+    by_art_brand: dict[tuple[str, str], Item] = {}
+    by_art: dict[str, Item] = {}
+    for c in catalog_items:
+        if c.code_1c:
+            by_code[c.code_1c.strip()] = c
+        if c.article_normalized:
+            if c.manufacturer_normalized:
+                by_art_brand[(c.article_normalized, c.manufacturer_normalized.lower())] = c
+            else:
+                # Может перезаписаться более «брендованной» версией — это ок,
+                # by_art это fallback когда у прайс-позиции нет бренда
+                by_art.setdefault(c.article_normalized, c)
+
+    pricelist_items = (
+        await session.scalars(
+            select(Item).where(
+                Item.source_id == source_id,
+                Item.is_active.is_(True),
+                Item.catalog_link_source.is_distinct_from("manual"),
+            )
+        )
+    ).all()
+
+    linked = 0
+    for item in pricelist_items:
+        target = _find_catalog_match(item, by_code, by_art_brand, by_art)
+        if target is not None:
+            item.linked_catalog_item_id = target.id
+            item.catalog_link_source = "auto"
+            linked += 1
+        else:
+            # Если раньше была auto-ссылка, а теперь каталог-карточка пропала —
+            # снимаем
+            if item.catalog_link_source == "auto":
+                item.linked_catalog_item_id = None
+                item.catalog_link_source = None
+    return linked
+
+
+def _find_catalog_match(
+    item: Item,
+    by_code: dict[str, Item],
+    by_art_brand: dict[tuple[str, str], Item],
+    by_art: dict[str, Item],
+) -> Item | None:
+    """Один lookup по приоритету: code_1c → article+brand → article."""
+    if item.code_1c:
+        match = by_code.get(item.code_1c.strip())
+        if match is not None:
+            return match
+    if not item.article_normalized:
+        return None
+    if item.manufacturer_normalized:
+        match = by_art_brand.get((item.article_normalized, item.manufacturer_normalized.lower()))
+        if match is not None:
+            return match
+    elif item.manufacturer:
+        match = by_art_brand.get((item.article_normalized, item.manufacturer.strip().lower()))
+        if match is not None:
+            return match
+    return by_art.get(item.article_normalized)
+
+
 async def backfill_supplier_skus(session: AsyncSession, supplier_id: UUID, prefix: str) -> int:
     """Присваивает supplier_sku всем активным позициям прайсов поставщика,
     у которых он ещё не задан.
@@ -392,3 +489,12 @@ async def apply_to_source(
         raise ImportError(f"Неизвестный режим импорта: {mode}")
 
     source.last_synced_at = now_utc()
+
+    # После вставки/обновления — auto-link к каталогу (только для прайсов
+    # поставщиков; каталог сам с собой не связываем)
+    from fasttender.models import DataSourceType
+
+    if source.type is DataSourceType.SUPPLIER_PRICELIST:
+        # flush чтобы новые позиции были видны в SELECT внутри auto_link
+        await session.flush()
+        await auto_link_to_catalog(session, source.id)

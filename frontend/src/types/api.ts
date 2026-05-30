@@ -70,6 +70,14 @@ export interface CandidateExplanation {
   levels_hit: MatchType[];
 }
 
+export interface LinkedCatalogItemRead {
+  item_id: string;
+  code_1c: string | null;
+  article: string | null;
+  name: string;
+  manufacturer: string | null;
+}
+
 export interface CandidateRead {
   item_id: string;
   source_id: string;
@@ -77,6 +85,8 @@ export interface CandidateRead {
   article: string | null;
   code_1c: string | null;
   supplier_sku: string | null;
+  linked_catalog: LinkedCatalogItemRead | null;
+  catalog_link_source: "auto" | "manual" | null;
   name: string;
   manufacturer: string | null;
   category_path: string | null;

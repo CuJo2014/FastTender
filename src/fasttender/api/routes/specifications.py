@@ -38,6 +38,7 @@ from fasttender.models import (
 )
 from fasttender.schemas.specification import (
     CandidateRead,
+    LinkedCatalogItemRead,
     PaginatedSpecItems,
     SpecificationCounts,
     SpecificationRead,
@@ -214,6 +215,10 @@ async def get_specification_items(
                 selectinload(SpecItem.candidates)
                 .selectinload(MatchCandidate.item)
                 .selectinload(Item.source),
+                # Без joinedload каталог-карточка будет N+1 запросом
+                selectinload(SpecItem.candidates)
+                .selectinload(MatchCandidate.item)
+                .joinedload(Item.linked_catalog_item),
                 selectinload(SpecItem.verification),
             )
         )
@@ -232,6 +237,8 @@ async def get_specification_items(
                 article=cand.item.article_raw,
                 code_1c=cand.item.code_1c,
                 supplier_sku=cand.item.supplier_sku,
+                linked_catalog=_build_linked_catalog(cand.item),
+                catalog_link_source=cand.item.catalog_link_source,
                 name=cand.item.name,
                 manufacturer=cand.item.manufacturer,
                 category_path=cand.item.category_path,
@@ -458,6 +465,20 @@ async def _compute_counts(
         items_matched_high=high,
         items_matched_medium=medium,
         items_not_found=not_found,
+    )
+
+
+def _build_linked_catalog(item: Item) -> LinkedCatalogItemRead | None:
+    """Снимок каталог-карточки для CandidateRead.linked_catalog."""
+    cat = item.linked_catalog_item
+    if cat is None:
+        return None
+    return LinkedCatalogItemRead(
+        item_id=cat.id,
+        code_1c=cat.code_1c,
+        article=cat.article_raw,
+        name=cat.name,
+        manufacturer=cat.manufacturer,
     )
 
 

@@ -77,6 +77,30 @@ export function CandidatesTable({
                       ID: {cand.supplier_sku}
                     </div>
                   )}
+                  {cand.linked_catalog && (
+                    <div
+                      className={
+                        "mt-0.5 inline-block rounded px-1 font-sans text-[10px] " +
+                        (cand.catalog_link_source === "manual"
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-slate-100 text-slate-500")
+                      }
+                      title={
+                        (cand.catalog_link_source === "manual"
+                          ? "Связь установлена вручную: "
+                          : "Авто-связка: ") +
+                        cand.linked_catalog.name +
+                        (cand.linked_catalog.manufacturer
+                          ? ` (${cand.linked_catalog.manufacturer})`
+                          : "")
+                      }
+                    >
+                      → Каталог{" "}
+                      {cand.linked_catalog.code_1c ??
+                        cand.linked_catalog.article ??
+                        ""}
+                    </div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   {cand.name}

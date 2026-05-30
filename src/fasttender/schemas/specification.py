@@ -48,6 +48,16 @@ class SpecificationUploadResponse(BaseModel):
     created_at: datetime
 
 
+class LinkedCatalogItemRead(BaseModel):
+    """Снимок каталог-карточки, к которой привязана прайс-позиция (миграция 0008)."""
+
+    item_id: UUID
+    code_1c: str | None = None
+    article: str | None = None
+    name: str
+    manufacturer: str | None = None
+
+
 class CandidateRead(BaseModel):
     """Один кандидат для отображения в UI (источник из item.source.type)."""
 
@@ -65,6 +75,11 @@ class CandidateRead(BaseModel):
     currency: str | None = None
     unit: str | None = None
     in_stock: bool = True
+
+    # Связь с карточкой каталога (для позиций из прайсов поставщиков).
+    # auto = определено импортером, manual = выбор менеджера.
+    linked_catalog: LinkedCatalogItemRead | None = None
+    catalog_link_source: str | None = None  # 'auto' | 'manual' | None
 
     confidence: float
     match_type: MatchType

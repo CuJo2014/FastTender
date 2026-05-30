@@ -39,9 +39,7 @@ def build_result(
         # старый кэш source.config с code_1c для прайса поставщика)
         if exclude_fields:
             mapping = ColumnMapping(
-                columns={
-                    f: c for f, c in mapping.columns.items() if f not in exclude_fields
-                }
+                columns={f: c for f, c in mapping.columns.items() if f not in exclude_fields}
             )
     else:
         detected = detect_header(matrix, exclude_fields=exclude_fields)
