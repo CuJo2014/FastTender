@@ -52,9 +52,19 @@ function SupplierList() {
 function SupplierRow({ supplier }: { supplier: SupplierRead }) {
   return (
     <li className="rounded-lg border border-slate-200 p-4">
-      <div className="mb-3 flex items-start justify-between">
-        <div>
-          <div className="font-medium">{supplier.name}</div>
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <div className="grow">
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{supplier.name}</span>
+            {supplier.prefix && (
+              <span
+                title="Префикс внутреннего SKU"
+                className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700"
+              >
+                {supplier.prefix}
+              </span>
+            )}
+          </div>
           {supplier.contact_email && (
             <div className="text-xs text-slate-500">{supplier.contact_email}</div>
           )}
@@ -62,11 +72,16 @@ function SupplierRow({ supplier }: { supplier: SupplierRead }) {
             Создан: {formatDateTime(supplier.created_at)}
           </div>
         </div>
+        <PrefixEditor supplier={supplier} />
       </div>
 
       <ImportPanel
         title="Импорт прайса этого поставщика"
-        description="Шаблон колонок выучится автоматически при первой загрузке"
+        description={
+          supplier.prefix
+            ? `Каждой позиции присвоится внутренний SKU ${supplier.prefix}-NNNNNN (стабильно при пере-загрузке)`
+            : "Совет: укажите префикс справа — тогда каждая позиция получит внутренний SKU для ссылок в КП"
+        }
         uploadFn={(file, mode) =>
           api.importSupplierPricelist(supplier.id, file, mode)
         }
@@ -75,27 +90,103 @@ function SupplierRow({ supplier }: { supplier: SupplierRead }) {
   );
 }
 
+function PrefixEditor({ supplier }: { supplier: SupplierRead }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(supplier.prefix ?? "");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.updateSupplier(supplier.id, {
+        prefix: value.trim() === "" ? null : value.trim().toUpperCase(),
+      }),
+    onSuccess: () => {
+      setEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+  });
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="text-xs text-blue-600 hover:underline"
+      >
+        {supplier.prefix ? "изменить префикс" : "+ добавить префикс"}
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) =>
+            setValue(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3))
+          }
+          placeholder="SIB"
+          maxLength={3}
+          className="w-16 rounded border border-slate-300 px-2 py-1 text-center font-mono text-sm uppercase"
+        />
+        <Button
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending || (value !== "" && value.length !== 3)}
+        >
+          {mutation.isPending ? "…" : "OK"}
+        </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setEditing(false);
+            setValue(supplier.prefix ?? "");
+          }}
+          className="text-xs text-slate-500 hover:underline"
+        >
+          отмена
+        </button>
+      </div>
+      {mutation.isError && (
+        <div className="text-xs text-red-700">
+          {mutation.error instanceof ApiError
+            ? mutation.error.status === 409
+              ? "Префикс занят"
+              : `Ошибка ${mutation.error.status}`
+            : "Ошибка"}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-400">3 символа A-Z 0-9</div>
+    </div>
+  );
+}
+
 function NewSupplierForm() {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [prefix, setPrefix] = useState("");
 
   const mutation = useMutation({
     mutationFn: () =>
       api.createSupplier({
         name: name.trim(),
         contact_email: email.trim() || null,
+        prefix: prefix.trim() === "" ? null : prefix.trim().toUpperCase(),
       }),
     onSuccess: () => {
       setName("");
       setEmail("");
+      setPrefix("");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
   });
 
+  const prefixValid = prefix === "" || prefix.length === 3;
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !prefixValid) return;
     mutation.mutate();
   };
 
@@ -131,7 +222,28 @@ function NewSupplierForm() {
             />
           </div>
 
-          <Button type="submit" disabled={!name.trim() || mutation.isPending}>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">
+              Префикс <span className="text-slate-400">(3 симв.)</span>
+            </label>
+            <input
+              type="text"
+              value={prefix}
+              onChange={(e) =>
+                setPrefix(
+                  e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3),
+                )
+              }
+              placeholder="SIB"
+              maxLength={3}
+              className="w-20 rounded-md border border-slate-300 px-3 py-2 text-center font-mono text-sm uppercase focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+
+          <Button
+            type="submit"
+            disabled={!name.trim() || !prefixValid || mutation.isPending}
+          >
             {mutation.isPending ? "Создание…" : "Создать"}
           </Button>
 

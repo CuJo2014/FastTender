@@ -231,6 +231,7 @@ async def get_specification_items(
                 source_type=source.type,
                 article=cand.item.article_raw,
                 code_1c=cand.item.code_1c,
+                supplier_sku=cand.item.supplier_sku,
                 name=cand.item.name,
                 manufacturer=cand.item.manufacturer,
                 category_path=cand.item.category_path,

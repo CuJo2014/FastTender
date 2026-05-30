@@ -8,6 +8,8 @@
 модулях (catalog.py, pricelist.py) и зовут функции отсюда.
 """
 
+import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -48,6 +50,75 @@ def _dedupe_key(item: ParsedItem) -> tuple[str, str] | None:
             return ("article+brand", f"{article_norm}|{brand}")
         return ("article", article_norm)
     return None
+
+
+def _item_dedupe_key(item: Item) -> tuple[str, str] | None:
+    """Тот же composite-ключ что `_dedupe_key`, но для ORM Item.
+
+    Нужен для сопоставления уже сохранённых позиций с входящими ParsedItem
+    при пере-загрузке прайса — чтобы supplier_sku оставался стабильным.
+    """
+    if item.code_1c:
+        return ("code", item.code_1c.strip())
+    art = item.article_normalized
+    if not art:
+        return None
+    if item.manufacturer_normalized:
+        return ("article+brand", f"{art}|{item.manufacturer_normalized.strip().lower()}")
+    if item.manufacturer:
+        return ("article+brand", f"{art}|{item.manufacturer.strip().lower()}")
+    return ("article", art)
+
+
+@dataclass
+class SkuAssigner:
+    """Генератор внутренних SKU позиций прайса (см. миграцию 0007).
+
+    Стабильность: при пере-загрузке прайса позиции, которые уже были,
+    сохраняют ранее присвоенный SKU. Новые получают следующий свободный
+    номер вида `<prefix>-<NNNNNN>`. Счётчик берётся как `MAX(номер) + 1`
+    среди всех существующих SKU в источнике (включая деактивированные —
+    чтобы номер не вернулся к ранее удалённой позиции).
+    """
+
+    prefix: str
+    reserved: dict[tuple[str, str], str] = field(default_factory=dict)
+    next_num: int = 1
+
+    def assign(self, parsed: ParsedItem) -> str:
+        key = _dedupe_key(parsed)
+        if key is not None and key in self.reserved:
+            return self.reserved[key]
+        sku = f"{self.prefix}-{self.next_num:06d}"
+        self.next_num += 1
+        return sku
+
+
+async def build_sku_assigner(session: AsyncSession, source_id: UUID, prefix: str) -> SkuAssigner:
+    """Создаёт SkuAssigner с зарезервированными SKU по всем существующим
+    позициям источника (active и deactivated)."""
+    stmt = select(Item).where(
+        Item.source_id == source_id,
+        Item.supplier_sku.is_not(None),
+    )
+    reserved: dict[tuple[str, str], str] = {}
+    max_num = 0
+    pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
+
+    for item in (await session.scalars(stmt)).all():
+        sku = item.supplier_sku
+        if sku is None:
+            continue
+        key = _item_dedupe_key(item)
+        # Last write wins: если у двух позиций (active+deactivated) одинаковый
+        # composite key, оставляем самый свежий SKU
+        if key is not None and key not in reserved:
+            reserved[key] = sku
+        m = pattern.match(sku)
+        if m:
+            max_num = max(max_num, int(m.group(1)))
+
+    return SkuAssigner(prefix=prefix, reserved=reserved, next_num=max_num + 1)
 
 
 def _human_key_label(key_tuple: tuple[str, str]) -> str:
@@ -112,16 +183,19 @@ def validate_and_dedupe(items: list[ParsedItem], report: ImportReport) -> list[P
     return valid
 
 
-def build_orm_item(source_id: UUID, parsed: ParsedItem) -> Item:
+def build_orm_item(source_id: UUID, parsed: ParsedItem, *, supplier_sku: str | None = None) -> Item:
     """Маппинг ParsedItem → ORM Item.
 
     attributes остаётся {} — характеристики в Фазе 1 не извлекаются (раздел 4.2).
+    supplier_sku передаётся только при импорте прайса поставщика с заданным
+    префиксом — см. SkuAssigner и build_sku_assigner.
     """
     return Item(
         source_id=source_id,
         article_raw=parsed.article,
         article_normalized=normalize_article(parsed.article),
         code_1c=parsed.code_1c,
+        supplier_sku=supplier_sku,
         name=parsed.name,
         name_normalized=normalize_name(parsed.name),
         manufacturer=parsed.manufacturer,
@@ -153,6 +227,8 @@ async def upsert_items(
     session: AsyncSession,
     source_id: UUID,
     items: list[ParsedItem],
+    *,
+    sku_assigner: SkuAssigner | None = None,
 ) -> tuple[int, int]:
     """MERGE: composite lookup. Существующие обновляются, новые INSERT.
 
@@ -218,9 +294,13 @@ async def upsert_items(
             target.currency = item.currency
             target.unit = item.unit
             target.is_active = True
+            # Backfill SKU для позиций, импортированных до появления feature
+            if sku_assigner is not None and not target.supplier_sku:
+                target.supplier_sku = sku_assigner.assign(item)
             updated += 1
         else:
-            session.add(build_orm_item(source_id, item))
+            sku = sku_assigner.assign(item) if sku_assigner is not None else None
+            session.add(build_orm_item(source_id, item, supplier_sku=sku))
             imported += 1
     return imported, updated
 
@@ -231,19 +311,32 @@ async def apply_to_source(
     parsed_items: list[ParsedItem],
     mode: ImportMode,
     report: ImportReport,
+    *,
+    supplier_prefix: str | None = None,
 ) -> None:
     """Применяет уже валидированные ParsedItem к источнику в выбранном режиме.
 
     Заполняет соответствующие поля report (rows_imported / rows_updated /
     rows_deactivated). Не выполняет commit — это ответственность вызывающего.
+
+    supplier_prefix: если задан, каждой позиции присваивается внутренний SKU
+    `<prefix>-<NNNNNN>`. Стабильно при пере-загрузке (см. SkuAssigner).
+    Передаётся только из PriceListImporter; для каталога компании None.
     """
+    sku_assigner = (
+        await build_sku_assigner(session, source.id, supplier_prefix) if supplier_prefix else None
+    )
+
     if mode is ImportMode.REPLACE:
         report.rows_deactivated = await deactivate_existing(session, source.id)
         for parsed in parsed_items:
-            session.add(build_orm_item(source.id, parsed))
+            sku = sku_assigner.assign(parsed) if sku_assigner is not None else None
+            session.add(build_orm_item(source.id, parsed, supplier_sku=sku))
         report.rows_imported = len(parsed_items)
     elif mode is ImportMode.MERGE:
-        imported, updated = await upsert_items(session, source.id, parsed_items)
+        imported, updated = await upsert_items(
+            session, source.id, parsed_items, sku_assigner=sku_assigner
+        )
         report.rows_imported = imported
         report.rows_updated = updated
     else:  # pragma: no cover — защита от расширения enum'а

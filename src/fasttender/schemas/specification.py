@@ -57,6 +57,7 @@ class CandidateRead(BaseModel):
 
     article: str | None = None
     code_1c: str | None = None  # внутренний код 1С — стабильный идентификатор
+    supplier_sku: str | None = None  # внутренний SKU прайса поставщика, <prefix>-<NNNNNN>
     name: str
     manufacturer: str | None = None
     category_path: str | None = None  # «Крепёж / Болты / DIN933» из 1С

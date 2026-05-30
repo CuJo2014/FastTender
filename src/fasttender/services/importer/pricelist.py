@@ -96,7 +96,14 @@ class PriceListImporter:
         )
 
         valid_items = validate_and_dedupe(parse_result.items, report)
-        await apply_to_source(session, source, valid_items, mode, report)
+        await apply_to_source(
+            session,
+            source,
+            valid_items,
+            mode,
+            report,
+            supplier_prefix=supplier.prefix,
+        )
         return report
 
     # --- Внутренние методы ---

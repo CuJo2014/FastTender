@@ -17,6 +17,7 @@ from fasttender.schemas.supplier import (
     PricelistSourceRead,
     SupplierCreate,
     SupplierRead,
+    SupplierUpdate,
 )
 from fasttender.services.importer import (
     ImportError,
@@ -54,6 +55,7 @@ async def create_supplier(
     supplier = Supplier(
         name=payload.name,
         contact_email=payload.contact_email,
+        prefix=payload.prefix,
         meta=payload.meta,
     )
     session.add(supplier)
@@ -61,9 +63,50 @@ async def create_supplier(
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
+        message = str(exc.orig) if exc.orig is not None else str(exc)
+        if "ux_supplier_prefix" in message:
+            detail = "Префикс уже используется другим поставщиком"
+        else:
+            detail = "Поставщик с таким именем уже существует"
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"message": "Поставщик с таким именем уже существует"},
+            detail={"message": detail},
+        ) from exc
+    await session.refresh(supplier)
+    return supplier
+
+
+@router.patch(
+    "/{supplier_id}",
+    response_model=SupplierRead,
+    summary="Обновить поставщика (имя, email, префикс)",
+)
+async def update_supplier(
+    supplier_id: UUID,
+    payload: SupplierUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> Supplier:
+    supplier = await session.get(Supplier, supplier_id)
+    if supplier is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Поставщик не найден"},
+        )
+    data = payload.model_dump(exclude_unset=True)
+    for field_name, value in data.items():
+        setattr(supplier, field_name, value)
+    try:
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        message = str(exc.orig) if exc.orig is not None else str(exc)
+        if "ux_supplier_prefix" in message:
+            detail = "Префикс уже используется другим поставщиком"
+        else:
+            detail = "Поставщик с таким именем уже существует"
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": detail},
         ) from exc
     await session.refresh(supplier)
     return supplier

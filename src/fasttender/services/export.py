@@ -54,6 +54,7 @@ HEADERS = (
     "Категория каталога",
     "Артикул выбранной",
     "Код 1С",
+    "Внутренний ID",
     "Наименование выбранной",
     "Производитель выбранной",
     "Цена",
@@ -142,6 +143,7 @@ async def _collect_rows(session: AsyncSession, spec_id: UUID) -> list[dict[str, 
                 "category_path": chosen_item.category_path if chosen_item else None,
                 "chosen_article": chosen_item.article_raw if chosen_item else None,
                 "chosen_code_1c": chosen_item.code_1c if chosen_item else None,
+                "chosen_supplier_sku": chosen_item.supplier_sku if chosen_item else None,
                 "chosen_name": chosen_item.name if chosen_item else None,
                 "chosen_manufacturer": chosen_item.manufacturer if chosen_item else None,
                 "chosen_price": _format_decimal(chosen_item.price) if chosen_item else None,
@@ -282,6 +284,7 @@ def _to_xlsx(rows: list[dict[str, Any]], spec: Specification) -> bytes:
         28,  # Категория каталога
         18,  # Артикул выбранной
         16,  # Код 1С
+        14,  # Внутренний ID
         35,  # Наименование выбранной
         18,  # Производитель выбранной
         12,  # Цена
@@ -329,6 +332,7 @@ def _row_to_tuple(row: dict[str, Any]) -> tuple[Any, ...]:
         row["category_path"],
         row["chosen_article"],
         row["chosen_code_1c"],
+        row["chosen_supplier_sku"],
         row["chosen_name"],
         row["chosen_manufacturer"],
         row["chosen_price"],

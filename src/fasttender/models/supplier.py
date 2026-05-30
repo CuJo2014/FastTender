@@ -17,6 +17,9 @@ class Supplier(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # 3-символьный префикс (A-Z0-9), уникальный между поставщиками. Используется
+    # для генерации внутреннего SKU позиций прайса (Item.supplier_sku).
+    prefix: Mapped[str | None] = mapped_column(String(3), nullable=True)
     meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     data_sources: Mapped[list["DataSource"]] = relationship(

@@ -12,6 +12,7 @@ import type {
   SpecificationUploadResponse,
   SupplierCreate,
   SupplierRead,
+  SupplierUpdate,
   VerifyRequest,
   VerifyResponse,
 } from "../types/api";
@@ -136,6 +137,12 @@ export const api = {
 
   createSupplier: (payload: SupplierCreate) =>
     request<SupplierRead>("/suppliers/", { method: "POST", json: payload }),
+
+  updateSupplier: (supplierId: string, payload: SupplierUpdate) =>
+    request<SupplierRead>(`/suppliers/${supplierId}`, {
+      method: "PATCH",
+      json: payload,
+    }),
 
   getSupplierPricelist: (supplierId: string) =>
     request<PricelistSourceRead | null>(

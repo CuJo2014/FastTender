@@ -76,6 +76,7 @@ export interface CandidateRead {
   source_type: DataSourceType;
   article: string | null;
   code_1c: string | null;
+  supplier_sku: string | null;
   name: string;
   manufacturer: string | null;
   category_path: string | null;
@@ -188,13 +189,22 @@ export interface ImportReport {
 export interface SupplierCreate {
   name: string;
   contact_email?: string | null;
+  prefix?: string | null;
   meta?: Record<string, unknown>;
+}
+
+export interface SupplierUpdate {
+  name?: string | null;
+  contact_email?: string | null;
+  prefix?: string | null;
+  meta?: Record<string, unknown> | null;
 }
 
 export interface SupplierRead {
   id: string;
   name: string;
   contact_email: string | null;
+  prefix: string | null;
   meta: Record<string, unknown>;
   created_at: string;
 }

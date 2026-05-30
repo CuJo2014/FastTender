@@ -39,6 +39,11 @@ class Item(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Всегда заполнен для импорта из 1С, гарантированно уникален.
     code_1c: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Внутренний SKU позиции прайса поставщика: <prefix>-<NNNNNN>,
+    # например «SIB-000042». Стабилен между пере-загрузками прайса
+    # (см. миграцию 0007). Для позиций каталога компании всегда None.
+    supplier_sku: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     name: Mapped[str] = mapped_column(String(1024), nullable=False)
     name_normalized: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
