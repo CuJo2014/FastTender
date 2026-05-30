@@ -51,6 +51,10 @@ class SupplierRead(BaseModel):
     meta: dict[str, Any]
     transformations: SupplierTransformations | None = None
     created_at: datetime
+    # Когда последний раз импортировался прайс этого поставщика
+    pricelist_last_synced_at: datetime | None = None
+    # Сколько активных позиций в прайсе
+    pricelist_items_count: int = 0
 
     @model_validator(mode="after")
     def _extract_transformations_from_meta(self) -> "SupplierRead":

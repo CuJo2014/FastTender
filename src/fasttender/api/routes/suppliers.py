@@ -6,13 +6,13 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fasttender.core.config import get_settings
 from fasttender.core.db import get_session
-from fasttender.models import DataSource, DataSourceType, Supplier
+from fasttender.models import DataSource, DataSourceType, Item, Supplier
 from fasttender.schemas.supplier import (
     PricelistSourceRead,
     SupplierCreate,
@@ -42,9 +42,37 @@ router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 )
 async def list_suppliers(
     session: AsyncSession = Depends(get_session),
-) -> list[Supplier]:
-    result = await session.scalars(select(Supplier).order_by(Supplier.name))
-    return list(result.all())
+) -> list[SupplierRead]:
+    """Возвращает поставщиков с инфой о последнем импорте прайса и счётчиком позиций.
+
+    UI использует pricelist_last_synced_at для отображения «Обновлён: дата»
+    и items_count для бэйджа в свёрнутом виде.
+    """
+    suppliers = list((await session.scalars(select(Supplier).order_by(Supplier.name))).all())
+
+    # Один запрос на все pricelist-источники + count активных позиций
+    rows = (
+        await session.execute(
+            select(
+                DataSource.supplier_id,
+                DataSource.last_synced_at,
+                func.count(Item.id).filter(Item.is_active.is_(True)).label("items"),
+            )
+            .outerjoin(Item, Item.source_id == DataSource.id)
+            .where(DataSource.type == DataSourceType.SUPPLIER_PRICELIST)
+            .group_by(DataSource.supplier_id, DataSource.last_synced_at)
+        )
+    ).all()
+    by_supplier = {r.supplier_id: (r.last_synced_at, r.items) for r in rows}
+
+    out: list[SupplierRead] = []
+    for sup in suppliers:
+        synced_at, items = by_supplier.get(sup.id, (None, 0))
+        read = SupplierRead.model_validate(sup)
+        read.pricelist_last_synced_at = synced_at
+        read.pricelist_items_count = items or 0
+        out.append(read)
+    return out
 
 
 @router.post(

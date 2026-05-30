@@ -50,44 +50,64 @@ function SupplierList() {
 }
 
 function SupplierRow({ supplier }: { supplier: SupplierRead }) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <li className="rounded-lg border border-slate-200 p-4">
-      <div className="mb-3 flex items-start justify-between gap-4">
-        <div className="grow">
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{supplier.name}</span>
-            {supplier.prefix && (
-              <span
-                title="Префикс внутреннего SKU"
-                className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700"
-              >
-                {supplier.prefix}
+    <li className="rounded-lg border border-slate-200">
+      <div className="flex items-start justify-between gap-4 p-4">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex grow items-start gap-2 text-left"
+          title={expanded ? "Свернуть" : "Развернуть"}
+        >
+          <span className="mt-0.5 text-slate-400">{expanded ? "▾" : "▸"}</span>
+          <div className="grow">
+            <div className="flex items-center gap-2">
+              <span className="font-medium">{supplier.name}</span>
+              {supplier.prefix && (
+                <span
+                  title="Префикс внутреннего SKU"
+                  className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-700"
+                >
+                  {supplier.prefix}
+                </span>
+              )}
+              <span className="text-xs text-slate-500">
+                · {supplier.pricelist_items_count.toLocaleString("ru")} позиций
               </span>
+            </div>
+            {supplier.contact_email && (
+              <div className="text-xs text-slate-500">{supplier.contact_email}</div>
             )}
+            <div className="text-xs text-slate-400">
+              {supplier.pricelist_last_synced_at && (
+                <>Обновлён: {formatDateTime(supplier.pricelist_last_synced_at)} · </>
+              )}
+              Создан: {formatDateTime(supplier.created_at)}
+            </div>
           </div>
-          {supplier.contact_email && (
-            <div className="text-xs text-slate-500">{supplier.contact_email}</div>
-          )}
-          <div className="text-xs text-slate-400">
-            Создан: {formatDateTime(supplier.created_at)}
-          </div>
-        </div>
+        </button>
         <PrefixEditor supplier={supplier} />
       </div>
 
-      <TransformationsBlock supplier={supplier} />
+      {expanded && (
+        <div className="border-t border-slate-200 p-4 pt-3">
+          <TransformationsBlock supplier={supplier} />
 
-      <ImportPanel
-        title="Импорт прайса этого поставщика"
-        description={
-          supplier.prefix
-            ? `Каждой позиции присвоится внутренний SKU ${supplier.prefix}-NNNNNN (стабильно при пере-загрузке)`
-            : "Совет: укажите префикс справа — тогда каждая позиция получит внутренний SKU для ссылок в КП"
-        }
-        uploadFn={(file, mode) =>
-          api.importSupplierPricelist(supplier.id, file, mode)
-        }
-      />
+          <ImportPanel
+            title="Импорт прайса этого поставщика"
+            description={
+              supplier.prefix
+                ? `Каждой позиции присвоится внутренний SKU ${supplier.prefix}-NNNNNN (стабильно при пере-загрузке)`
+                : "Совет: укажите префикс справа — тогда каждая позиция получит внутренний SKU для ссылок в КП"
+            }
+            uploadFn={(file, mode) =>
+              api.importSupplierPricelist(supplier.id, file, mode)
+            }
+          />
+        </div>
+      )}
     </li>
   );
 }

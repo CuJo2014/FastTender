@@ -229,6 +229,8 @@ export interface SupplierRead {
   meta: Record<string, unknown>;
   transformations: SupplierTransformations | null;
   created_at: string;
+  pricelist_last_synced_at: string | null;
+  pricelist_items_count: number;
 }
 
 export interface PricelistSourceRead {
