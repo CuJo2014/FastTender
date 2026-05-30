@@ -4,6 +4,7 @@
 import type {
   AutoConfirmRequest,
   AutoConfirmResponse,
+  CatalogInfo,
   ImportMode,
   ImportReport,
   PaginatedSpecItems,
@@ -116,6 +117,8 @@ export const api = {
     `${BASE}/specifications/${specId}/export?format=${format}`,
 
   // --- Catalog ---
+
+  getCatalogInfo: () => request<CatalogInfo>("/catalog/info"),
 
   importCatalog: async (file: File, mode: ImportMode = "replace") => {
     const form = new FormData();

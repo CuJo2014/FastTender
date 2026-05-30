@@ -194,6 +194,12 @@ export interface ImportReport {
   duplicates: DuplicateArticle[];
 }
 
+export interface CatalogInfo {
+  items_count: number;
+  last_synced_at: string | null;
+  created_at: string | null;
+}
+
 // --- Suppliers ---
 
 export interface SupplierTransformations {

@@ -2,13 +2,17 @@
 
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fasttender.core.config import get_settings
 from fasttender.core.db import get_session
+from fasttender.models import DataSource, DataSourceType, Item
 from fasttender.services.importer import (
     CatalogImporter,
     ImportError,
@@ -18,6 +22,37 @@ from fasttender.services.importer import (
 from fasttender.services.parser import SpecificationParser
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+class CatalogInfo(BaseModel):
+    """Сводка по каталогу компании для UI."""
+
+    items_count: int = 0
+    last_synced_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+@router.get(
+    "/info",
+    response_model=CatalogInfo,
+    summary="Сводка по каталогу (счётчик позиций, дата последнего импорта)",
+)
+async def get_catalog_info(session: AsyncSession = Depends(get_session)) -> CatalogInfo:
+    source = await session.scalar(
+        select(DataSource).where(DataSource.type == DataSourceType.COMPANY_CATALOG)
+    )
+    if source is None:
+        return CatalogInfo()
+    items_count = await session.scalar(
+        select(func.count(Item.id)).where(
+            Item.source_id == source.id, Item.is_active.is_(True)
+        )
+    )
+    return CatalogInfo(
+        items_count=int(items_count or 0),
+        last_synced_at=source.last_synced_at,
+        created_at=source.created_at,
+    )
 
 
 @router.post(
