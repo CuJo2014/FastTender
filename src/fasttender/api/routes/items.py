@@ -118,8 +118,7 @@ async def reset_catalog_link_to_auto(
         if c.article_normalized:
             if c.manufacturer_normalized:
                 by_art_brand[(c.article_normalized, c.manufacturer_normalized.lower())] = c
-            else:
-                by_art.setdefault(c.article_normalized, c)
+            by_art.setdefault(c.article_normalized, c)
 
     match = _find_catalog_match(item, by_code, by_art_brand, by_art)
     item.linked_catalog_item_id = match.id if match else None

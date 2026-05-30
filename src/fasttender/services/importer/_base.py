@@ -112,10 +112,10 @@ async def auto_link_to_catalog(session: AsyncSession, source_id: UUID) -> int:
         if c.article_normalized:
             if c.manufacturer_normalized:
                 by_art_brand[(c.article_normalized, c.manufacturer_normalized.lower())] = c
-            else:
-                # Может перезаписаться более «брендованной» версией — это ок,
-                # by_art это fallback когда у прайс-позиции нет бренда
-                by_art.setdefault(c.article_normalized, c)
+            # by_art всегда регистрируем: фолбэк для прайсов без бренда.
+            # Если несколько каталог-карточек делят article — берём первую
+            # детерминированно (по итерации). Менеджер может переопределить вручную.
+            by_art.setdefault(c.article_normalized, c)
 
     pricelist_items = (
         await session.scalars(
