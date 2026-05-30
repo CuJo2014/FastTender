@@ -12,7 +12,7 @@ from pathlib import Path
 import chardet
 
 from fasttender.services.parser._matrix import build_result
-from fasttender.services.parser.types import ColumnMapping, ParseError, ParseResult
+from fasttender.services.parser.types import ColumnMapping, ParseError, ParseResult, SpecField
 
 # Кандидаты разделителей для эвристики, если csv.Sniffer не справился
 _CANDIDATE_DELIMITERS = (",", ";", "\t", "|")
@@ -24,6 +24,7 @@ def parse_csv(
     mapping_override: ColumnMapping | None = None,
     encoding_override: str | None = None,
     delimiter_override: str | None = None,
+    exclude_fields: frozenset[SpecField] | None = None,
 ) -> ParseResult:
     """Парсит CSV/TSV-файл."""
     raw = path.read_bytes()
@@ -68,6 +69,7 @@ def parse_csv(
         encoding=encoding,
         delimiter=delimiter,
         mapping_override=mapping_override,
+        exclude_fields=exclude_fields,
     )
 
 

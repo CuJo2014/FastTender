@@ -129,6 +129,23 @@ def test_barcode_not_recognized_as_code_1c() -> None:
     assert mapping.get(SpecField.CODE_1C) is None
 
 
+def test_exclude_fields_skips_code_1c_entirely() -> None:
+    """Когда CODE_1C в exclude_fields — колонка «Код» НЕ попадёт в маппинг,
+    даже если она явно так названа. Используется для прайсов поставщиков —
+    у них не бывает Кода 1С (это идентификатор каталога компании).
+    """
+    rows = [
+        ["Артикул", "Код", "Наименование", "Цена"],
+        ["A-1", "12345", "Болт", 10],
+    ]
+    result = detect_header(rows, exclude_fields=frozenset({SpecField.CODE_1C}))
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 0
+    assert mapping.get(SpecField.CODE_1C) is None  # принудительно исключён
+    assert mapping.get(SpecField.NAME) == 2
+
+
 def test_real_code_1c_still_recognized() -> None:
     """Колонка «Код» (без квалификатора) по-прежнему попадает в CODE_1C —
     это типичный заголовок 1С-выгрузок."""

@@ -202,16 +202,24 @@ def _normalize_header_cell(value: Any) -> str | None:
     return s
 
 
-def _match_field(header_text: str) -> SpecField | None:
+def _match_field(
+    header_text: str, *, exclude_fields: frozenset[SpecField] | None = None
+) -> SpecField | None:
     """Сопоставляет одну ячейку шапки с логическим полем.
 
     Стратегия: ячейка совпадает с синонимом точно ИЛИ начинается с него
     (с учётом границы слова). Это ловит варианты вроде "Артикул товара".
 
+    exclude_fields: поля, поиск которых нужно вообще пропустить. Например,
+    для прайсов поставщиков CODE_1C никогда не применим — это внутренний
+    идентификатор каталога компании.
+
     Negative-list: некоторые поля имеют список запрещённых заголовков
     (ТНВЭД, штрих-код и т.п.) — они проверяются ДО синонимов.
     """
     for field in _FIELD_PRIORITY:
+        if exclude_fields and field in exclude_fields:
+            continue
         negatives = _FIELD_NEGATIVES.get(field)
         if negatives and header_text in negatives:
             continue  # это false-positive для этого поля, пропускаем
@@ -229,7 +237,9 @@ def _match_field(header_text: str) -> SpecField | None:
     return None
 
 
-def _score_row(row: Sequence[Any]) -> tuple[int, ColumnMapping]:
+def _score_row(
+    row: Sequence[Any], *, exclude_fields: frozenset[SpecField] | None = None
+) -> tuple[int, ColumnMapping]:
     """Считает header score для строки и одновременно строит маппинг."""
     mapping = ColumnMapping()
     score = 0
@@ -237,7 +247,7 @@ def _score_row(row: Sequence[Any]) -> tuple[int, ColumnMapping]:
         text = _normalize_header_cell(cell)
         if not text:
             continue
-        field = _match_field(text)
+        field = _match_field(text, exclude_fields=exclude_fields)
         if field is None:
             continue
         # Если поле уже занято — не перезаписываем (первое совпадение «побеждает»)
@@ -252,6 +262,7 @@ def detect_header(
     *,
     max_scan_rows: int = 30,
     min_score: int = 2,
+    exclude_fields: frozenset[SpecField] | None = None,
 ) -> tuple[int, ColumnMapping] | None:
     """Определяет строку шапки и строит ColumnMapping.
 
@@ -270,7 +281,7 @@ def detect_header(
     best_mapping: ColumnMapping | None = None
 
     for idx, row in enumerate(rows[:max_scan_rows]):
-        score, mapping = _score_row(row)
+        score, mapping = _score_row(row, exclude_fields=exclude_fields)
         if score > best_score and mapping.has(SpecField.NAME):
             best_score = score
             best_row = idx

@@ -26,6 +26,7 @@ def build_result(
     encoding: str | None = None,
     delimiter: str | None = None,
     mapping_override: ColumnMapping | None = None,
+    exclude_fields: frozenset[SpecField] | None = None,
 ) -> ParseResult:
     """Превращает плоскую матрицу в ParseResult: автоопределение шапки + извлечение строк."""
     if not matrix:
@@ -34,8 +35,16 @@ def build_result(
     if mapping_override is not None and mapping_override.is_usable:
         header_row = 0
         mapping = mapping_override
+        # Если override содержит поле из exclude_fields — убираем (например,
+        # старый кэш source.config с code_1c для прайса поставщика)
+        if exclude_fields:
+            mapping = ColumnMapping(
+                columns={
+                    f: c for f, c in mapping.columns.items() if f not in exclude_fields
+                }
+            )
     else:
-        detected = detect_header(matrix)
+        detected = detect_header(matrix, exclude_fields=exclude_fields)
         if detected is None:
             raise ParseError(
                 "Не удалось определить строку шапки. Требуется ручной маппинг колонок.",

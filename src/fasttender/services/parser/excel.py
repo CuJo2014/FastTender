@@ -14,7 +14,7 @@ from openpyxl.utils.cell import range_boundaries
 from openpyxl.worksheet.worksheet import Worksheet
 
 from fasttender.services.parser._matrix import build_result
-from fasttender.services.parser.types import ColumnMapping, ParseError, ParseResult
+from fasttender.services.parser.types import ColumnMapping, ParseError, ParseResult, SpecField
 
 
 def parse_excel(
@@ -22,6 +22,7 @@ def parse_excel(
     *,
     sheet_name: str | None = None,
     mapping_override: ColumnMapping | None = None,
+    exclude_fields: frozenset[SpecField] | None = None,
 ) -> ParseResult:
     """Парсит Excel-файл (.xlsx/.xlsm/.xls) и возвращает ParseResult."""
     ext = path.suffix.lower()
@@ -32,7 +33,12 @@ def parse_excel(
     else:
         raise ParseError(f"Неподдерживаемое расширение Excel: {ext}")
 
-    return build_result(matrix, sheet_name=title, mapping_override=mapping_override)
+    return build_result(
+        matrix,
+        sheet_name=title,
+        mapping_override=mapping_override,
+        exclude_fields=exclude_fields,
+    )
 
 
 def _read_xlsx_sheet(path: Path, sheet_name: str | None) -> tuple[str, list[list[Any]]]:

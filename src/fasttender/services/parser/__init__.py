@@ -58,6 +58,7 @@ class SpecificationParser:
         mapping_override: ColumnMapping | None = None,
         encoding_override: str | None = None,
         delimiter_override: str | None = None,
+        exclude_fields: frozenset[SpecField] | None = None,
     ) -> ParseResult:
         """Парсит файл и возвращает ParseResult.
 
@@ -84,6 +85,7 @@ class SpecificationParser:
                 path,
                 sheet_name=sheet_name,
                 mapping_override=mapping_override,
+                exclude_fields=exclude_fields,
             )
         if ext in _CSV_EXT:
             return parse_csv(
@@ -91,6 +93,7 @@ class SpecificationParser:
                 mapping_override=mapping_override,
                 encoding_override=encoding_override,
                 delimiter_override=delimiter_override,
+                exclude_fields=exclude_fields,
             )
 
         raise ParseError(

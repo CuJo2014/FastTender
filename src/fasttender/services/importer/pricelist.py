@@ -77,10 +77,15 @@ class PriceListImporter:
         effective_mapping = mapping_override or self._mapping_from_config(source.config)
 
         try:
+            # У поставщиков НЕ бывает Кода 1С — это внутренний идентификатор
+            # каталога компании. Запрещаем парсеру детектить колонку, иначе
+            # «Код ТНВЭД» / «Код товара поставщика» / «HS code» ошибочно
+            # попадают в code_1c и схлопывают всё через dedupe.
             parse_result = self._parser.parse(
                 path,
                 sheet_name=sheet_name,
                 mapping_override=effective_mapping,
+                exclude_fields=frozenset({SpecField.CODE_1C}),
             )
         except ParseError as exc:
             raise ImportError(
