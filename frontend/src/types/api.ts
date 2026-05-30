@@ -186,10 +186,19 @@ export interface ImportReport {
 
 // --- Suppliers ---
 
+export interface SupplierTransformations {
+  brand_regex?: string | null;
+  vat_included?: boolean;
+  vat_rate?: number;
+  default_unit?: string | null;
+  default_currency?: string | null;
+}
+
 export interface SupplierCreate {
   name: string;
   contact_email?: string | null;
   prefix?: string | null;
+  transformations?: SupplierTransformations | null;
   meta?: Record<string, unknown>;
 }
 
@@ -197,6 +206,7 @@ export interface SupplierUpdate {
   name?: string | null;
   contact_email?: string | null;
   prefix?: string | null;
+  transformations?: SupplierTransformations | null;
   meta?: Record<string, unknown> | null;
 }
 
@@ -206,6 +216,7 @@ export interface SupplierRead {
   contact_email: string | null;
   prefix: string | null;
   meta: Record<string, unknown>;
+  transformations: SupplierTransformations | null;
   created_at: string;
 }
 

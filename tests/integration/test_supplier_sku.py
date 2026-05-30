@@ -228,8 +228,7 @@ async def test_setting_prefix_via_api_backfills_existing_items(
 
     assert backfilled == 3
     items = {
-        i.article_normalized: i.supplier_sku
-        for i in (await session.scalars(select(Item))).all()
+        i.article_normalized: i.supplier_sku for i in (await session.scalars(select(Item))).all()
     }
     assert items["A1"] == "NEW-000001"
     assert items["A2"] == "NEW-000002"

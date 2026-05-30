@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import type { SupplierRead } from "../types/api";
+import type { SupplierRead, SupplierTransformations } from "../types/api";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { ImportPanel } from "../components/ImportPanel";
@@ -75,6 +75,8 @@ function SupplierRow({ supplier }: { supplier: SupplierRead }) {
         <PrefixEditor supplier={supplier} />
       </div>
 
+      <TransformationsBlock supplier={supplier} />
+
       <ImportPanel
         title="Импорт прайса этого поставщика"
         description={
@@ -88,6 +90,156 @@ function SupplierRow({ supplier }: { supplier: SupplierRead }) {
       />
     </li>
   );
+}
+
+function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
+  const queryClient = useQueryClient();
+  const t = supplier.transformations ?? {};
+  const [open, setOpen] = useState(false);
+  const [brandRegex, setBrandRegex] = useState(t.brand_regex ?? "");
+  const [vatIncluded, setVatIncluded] = useState(t.vat_included ?? false);
+  const [vatRate, setVatRate] = useState(t.vat_rate ?? 20);
+  const [defaultUnit, setDefaultUnit] = useState(t.default_unit ?? "");
+  const [defaultCurrency, setDefaultCurrency] = useState(t.default_currency ?? "");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      api.updateSupplier(supplier.id, {
+        transformations: {
+          brand_regex: brandRegex.trim() === "" ? null : brandRegex.trim(),
+          vat_included: vatIncluded,
+          vat_rate: vatRate,
+          default_unit: defaultUnit.trim() === "" ? null : defaultUnit.trim(),
+          default_currency:
+            defaultCurrency.trim() === "" ? null : defaultCurrency.trim(),
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+    },
+  });
+
+  const summary = describeTransformations(t);
+
+  return (
+    <div className="mb-3 rounded-md border border-slate-200 bg-slate-50/60">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-100"
+      >
+        <span>
+          {open ? "▾" : "▸"} Особенности прайса{" "}
+          <span className="ml-2 text-slate-500">{summary}</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-slate-200 px-3 py-3 text-sm">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-700">
+              Бренд внутри Наименования (regex с 2 группами)
+            </label>
+            <input
+              type="text"
+              value={brandRegex}
+              onChange={(e) => setBrandRegex(e.target.value)}
+              placeholder="^(.+?)\s*//\s*(.+?)\s*$"
+              className="block w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs"
+            />
+            <div className="mt-0.5 text-[10px] text-slate-500">
+              Применяется если поле manufacturer пустое. group(1) = очищенное
+              имя, group(2) = бренд. Пример: «Болт // Sparta» → name=«Болт»,
+              brand=«Sparta».
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1 text-xs">
+              <input
+                type="checkbox"
+                checked={vatIncluded}
+                onChange={(e) => setVatIncluded(e.target.checked)}
+              />
+              Цена с НДС → вычесть
+            </label>
+            {vatIncluded && (
+              <label className="flex items-center gap-1 text-xs">
+                Ставка:
+                <input
+                  type="number"
+                  value={vatRate}
+                  onChange={(e) => setVatRate(Number(e.target.value))}
+                  min={0}
+                  max={100}
+                  className="w-14 rounded border border-slate-300 px-1.5 py-0.5"
+                />
+                %
+              </label>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Ед.изм. по умолчанию (если пусто в файле)
+              </label>
+              <input
+                type="text"
+                value={defaultUnit}
+                onChange={(e) => setDefaultUnit(e.target.value)}
+                placeholder="шт"
+                maxLength={32}
+                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Валюта по умолчанию
+              </label>
+              <input
+                type="text"
+                value={defaultCurrency}
+                onChange={(e) => setDefaultCurrency(e.target.value.toUpperCase())}
+                placeholder="RUB"
+                maxLength={8}
+                className="w-20 rounded border border-slate-300 px-2 py-1 text-xs uppercase"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending ? "Сохранение…" : "Сохранить"}
+            </Button>
+            <span className="text-[10px] text-slate-500">
+              Применятся к следующему импорту прайса
+            </span>
+            {mutation.isError && (
+              <span className="text-xs text-red-700">
+                {mutation.error instanceof ApiError
+                  ? `Ошибка ${mutation.error.status}`
+                  : "Ошибка"}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function describeTransformations(t: SupplierTransformations): string {
+  const parts: string[] = [];
+  if (t.brand_regex) parts.push("бренд из имени");
+  if (t.vat_included) parts.push(`НДС ${t.vat_rate ?? 20}%`);
+  if (t.default_unit) parts.push(`ед=${t.default_unit}`);
+  if (t.default_currency) parts.push(`вал=${t.default_currency}`);
+  return parts.length === 0 ? "(не настроены)" : parts.join(", ");
 }
 
 function PrefixEditor({ supplier }: { supplier: SupplierRead }) {

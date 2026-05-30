@@ -53,11 +53,14 @@ async def create_supplier(
     payload: SupplierCreate,
     session: AsyncSession = Depends(get_session),
 ) -> Supplier:
+    meta = dict(payload.meta)
+    if payload.transformations is not None:
+        meta["transformations"] = payload.transformations.model_dump(exclude_none=True)
     supplier = Supplier(
         name=payload.name,
         contact_email=payload.contact_email,
         prefix=payload.prefix,
-        meta=payload.meta,
+        meta=meta,
     )
     session.add(supplier)
     try:
@@ -95,6 +98,20 @@ async def update_supplier(
         )
     data = payload.model_dump(exclude_unset=True)
     prefix_changed = "prefix" in data and data["prefix"] != supplier.prefix
+
+    # transformations едет отдельно — сохраняем в meta
+    if "transformations" in data:
+        new_meta = dict(supplier.meta) if supplier.meta else {}
+        if data["transformations"] is None:
+            new_meta.pop("transformations", None)
+        else:
+            # data["transformations"] уже dict после model_dump
+            new_meta["transformations"] = {
+                k: v for k, v in data["transformations"].items() if v is not None
+            }
+        supplier.meta = new_meta
+        data.pop("transformations")
+
     for field_name, value in data.items():
         setattr(supplier, field_name, value)
 

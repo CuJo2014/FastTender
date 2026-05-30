@@ -255,6 +255,54 @@ async def test_catalog_and_pricelist_coexist_with_same_article(
     assert DataSourceType.SUPPLIER_PRICELIST in types
 
 
+async def test_pricelist_applies_supplier_transformations(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Конфиг трансформаций в supplier.meta применяется при импорте."""
+    supplier = Supplier(
+        name="Мир Инструмента",
+        contact_email=None,
+        meta={
+            "transformations": {
+                "brand_regex": r"^(.+?)\s*//\s*(.+?)\s*$",
+                "vat_included": True,
+                "vat_rate": 20,
+                "default_unit": "шт",
+                "default_currency": "RUB",
+            }
+        },
+    )
+    session.add(supplier)
+    await session.flush()
+
+    path = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-1", "Молоток 200г // Sparta", "120"],
+            ["A-2", "Гайка М10", "60"],  # без бренда — не парсится
+        ],
+    )
+    await importer.import_file(session, supplier_id=supplier.id, path=path, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    items = {i.article_normalized: i for i in (await session.scalars(select(Item))).all()}
+    # brand_regex сработал
+    assert items["A1"].name == "Молоток 200г"
+    assert items["A1"].manufacturer == "Sparta"
+    # НДС убран (120 / 1.2 = 100)
+    assert items["A1"].price == Decimal("100.0000")
+    # Дефолты подставлены
+    assert items["A1"].unit == "шт"
+    assert items["A1"].currency == "RUB"
+    # На строке без бренда — name неизменён, но дефолты применились
+    assert items["A2"].manufacturer is None
+    assert items["A2"].name == "Гайка М10"
+    assert items["A2"].price == Decimal("50.0000")  # 60 / 1.2
+
+
 async def test_merge_mode_updates_existing_pricelist_items(
     session: AsyncSession,
     importer: PriceListImporter,

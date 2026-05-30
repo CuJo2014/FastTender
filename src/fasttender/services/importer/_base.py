@@ -70,9 +70,7 @@ def _item_dedupe_key(item: Item) -> tuple[str, str] | None:
     return ("article", art)
 
 
-async def backfill_supplier_skus(
-    session: AsyncSession, supplier_id: UUID, prefix: str
-) -> int:
+async def backfill_supplier_skus(session: AsyncSession, supplier_id: UUID, prefix: str) -> int:
     """Присваивает supplier_sku всем активным позициям прайсов поставщика,
     у которых он ещё не задан.
 

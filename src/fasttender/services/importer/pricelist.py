@@ -18,6 +18,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fasttender.models import DataSource, DataSourceStatus, DataSourceType, Supplier
 from fasttender.services.importer._base import apply_to_source, validate_and_dedupe
+from fasttender.services.importer.transformations import (
+    SupplierTransformations,
+    apply_transformations,
+)
 from fasttender.services.importer.types import (
     ImportError,
     ImportMode,
@@ -88,14 +92,19 @@ class PriceListImporter:
         if effective_mapping is None:
             self._save_mapping_to_config(source, parse_result.column_mapping)
 
+        # Применяем конфигурируемые трансформации поставщика (бренд из
+        # имени, НДС, дефолты) — до dedupe/upsert
+        transformations = SupplierTransformations.from_meta(supplier.meta)
+        transformed_items = apply_transformations(parse_result.items, transformations)
+
         report = ImportReport(
             source_id=str(source.id),
             source_name=source.name,
             mode=mode,
-            rows_total=len(parse_result.items),
+            rows_total=len(transformed_items),
         )
 
-        valid_items = validate_and_dedupe(parse_result.items, report)
+        valid_items = validate_and_dedupe(transformed_items, report)
         await apply_to_source(
             session,
             source,
