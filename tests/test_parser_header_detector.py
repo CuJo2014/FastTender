@@ -99,3 +99,44 @@ def test_english_headers() -> None:
     _, mapping = result
     assert mapping.get(SpecField.NAME) == 0
     assert mapping.get(SpecField.ARTICLE) == 1
+
+
+def test_tnved_not_recognized_as_code_1c() -> None:
+    """«Код ТНВЭД» — таможенный код, не должен попадать в CODE_1C
+    (иначе dedupe схлопывает разные товары с одинаковым ТНВЭД)."""
+    rows = [
+        ["Наименование", "Модель", "Цена", "Код ТНВЭД"],
+        ["Дрель", "BD-100", 1000, "8467210000"],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.NAME) == 0
+    assert mapping.get(SpecField.ARTICLE) == 1  # «Модель»
+    assert mapping.get(SpecField.PRICE) == 2
+    # Главное: ТНВЭД НЕ попал в CODE_1C
+    assert mapping.get(SpecField.CODE_1C) is None
+
+
+def test_barcode_not_recognized_as_code_1c() -> None:
+    rows = [
+        ["Артикул", "Наименование", "Цена", "Штрих-код"],
+        ["A-1", "Товар", 100, "4607000123456"],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.CODE_1C) is None
+
+
+def test_real_code_1c_still_recognized() -> None:
+    """Колонка «Код» (без квалификатора) по-прежнему попадает в CODE_1C —
+    это типичный заголовок 1С-выгрузок."""
+    rows = [
+        ["Артикул", "Код", "Наименование", "Цена"],
+        ["A-1", "Ц0000000100", "Болт", 10],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.CODE_1C) == 1

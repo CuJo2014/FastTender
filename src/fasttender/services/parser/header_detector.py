@@ -57,6 +57,8 @@ COLUMN_SYNONYMS: dict[SpecField, tuple[str, ...]] = {
         "p/n",
     ),
     SpecField.CODE_1C: (
+        # NB: бэйр «код» сначала проверяется через _CODE_1C_NEGATIVE на
+        # типичные false-positive (ТНВЭД, штрих-код, ОКПД и т.п.)
         "код",
         "код 1с",
         "код1с",
@@ -162,6 +164,32 @@ _FIELD_PRIORITY: tuple[SpecField, ...] = (
     SpecField.NOTES,
 )
 
+# Заголовки которые НЕ должны попадать в CODE_1C, несмотря на слово «код».
+# ТНВЭД — таможенный код, у разных товаров может совпадать.
+# Штрих-код — упаковочный, тоже не уникален в нашем смысле.
+# ОКПД/ОКВЭД — классификаторы видов экономической деятельности.
+_FIELD_NEGATIVES: dict[SpecField, frozenset[str]] = {
+    SpecField.CODE_1C: frozenset(
+        {
+            "код тнвэд",
+            "тнвэд",
+            "код тн вэд",
+            "тн вэд",
+            "штрих код",
+            "штрих-код",
+            "штрихкод",
+            "barcode",
+            "код страны",
+            "country code",
+            "код окпд",
+            "окпд",
+            "код оквэд",
+            "оквэд",
+            "код упаковки",
+        }
+    ),
+}
+
 
 def _normalize_header_cell(value: Any) -> str | None:
     """Готовит заголовок для сравнения: lowercase, без лишней пунктуации."""
@@ -179,8 +207,14 @@ def _match_field(header_text: str) -> SpecField | None:
 
     Стратегия: ячейка совпадает с синонимом точно ИЛИ начинается с него
     (с учётом границы слова). Это ловит варианты вроде "Артикул товара".
+
+    Negative-list: некоторые поля имеют список запрещённых заголовков
+    (ТНВЭД, штрих-код и т.п.) — они проверяются ДО синонимов.
     """
     for field in _FIELD_PRIORITY:
+        negatives = _FIELD_NEGATIVES.get(field)
+        if negatives and header_text in negatives:
+            continue  # это false-positive для этого поля, пропускаем
         for synonym in COLUMN_SYNONYMS[field]:
             if header_text == synonym:
                 return field
