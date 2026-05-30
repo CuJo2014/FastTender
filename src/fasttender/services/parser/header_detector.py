@@ -243,6 +243,7 @@ def _score_row(
     """Считает header score для строки и одновременно строит маппинг."""
     mapping = ColumnMapping()
     score = 0
+    article_candidates: list[int] = []
     for col_idx, cell in enumerate(row):
         text = _normalize_header_cell(cell)
         if not text:
@@ -250,10 +251,26 @@ def _score_row(
         field = _match_field(text, exclude_fields=exclude_fields)
         if field is None:
             continue
+        if field is SpecField.ARTICLE:
+            article_candidates.append(col_idx)
         # Если поле уже занято — не перезаписываем (первое совпадение «побеждает»)
         if not mapping.has(field):
             mapping.columns[field] = col_idx
             score += 1
+
+    # Фолбэк: если есть несколько ARTICLE-совпадений и нет NAME — второе
+    # становится NAME. Покрывает кейс прайсов где «Артикул» и «Модель»
+    # сосуществуют (Модель = описательное название продукта, не SKU).
+    # Пример: Milwaukee — col 8 «Артикул» = 4933479867, col 9 «Модель» =
+    # «Акк. ударная дрель/ш. M12 FPD2-0».
+    if (
+        not mapping.has(SpecField.NAME)
+        and len(article_candidates) >= 2
+        and (exclude_fields is None or SpecField.NAME not in exclude_fields)
+    ):
+        mapping.columns[SpecField.NAME] = article_candidates[1]
+        score += 1
+
     return score, mapping
 
 

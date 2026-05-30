@@ -129,6 +129,38 @@ def test_barcode_not_recognized_as_code_1c() -> None:
     assert mapping.get(SpecField.CODE_1C) is None
 
 
+def test_article_and_model_coexist_model_becomes_name() -> None:
+    """Когда в шапке есть и «Артикул» и «Модель»: Артикул → ARTICLE,
+    Модель → NAME (как описательное название продукта).
+
+    Реальный кейс: Milwaukee — col «Артикул» = 4933479867, col «Модель» =
+    «Акк. ударная дрель/ш. M12 FPD2-0».
+    """
+    rows = [
+        ["Категория", "Производитель", "Артикул", "Модель", "Цена"],
+        ["Инструмент", "Milwaukee", "4933479867", "Акк. дрель M12", 27590],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 2  # «Артикул»
+    assert mapping.get(SpecField.NAME) == 3  # «Модель» → fallback NAME
+    assert mapping.get(SpecField.PRICE) == 4
+
+
+def test_only_model_still_becomes_article() -> None:
+    """Если в шапке только «Модель» (без «Артикул») — она article, как для MKT."""
+    rows = [
+        ["Категория", "Модель", "Наименование", "Цена"],
+        ["Инструмент", "BD-100", "Дрель", 1000],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 1  # «Модель» — единственный кандидат
+    assert mapping.get(SpecField.NAME) == 2  # NAME уже найден явно
+
+
 def test_exclude_fields_skips_code_1c_entirely() -> None:
     """Когда CODE_1C в exclude_fields — колонка «Код» НЕ попадёт в маппинг,
     даже если она явно так названа. Используется для прайсов поставщиков —
