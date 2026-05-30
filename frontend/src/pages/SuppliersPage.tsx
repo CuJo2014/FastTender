@@ -101,6 +101,7 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
   const [vatRate, setVatRate] = useState(t.vat_rate ?? 20);
   const [defaultUnit, setDefaultUnit] = useState(t.default_unit ?? "");
   const [defaultCurrency, setDefaultCurrency] = useState(t.default_currency ?? "");
+  const [manufacturer, setManufacturer] = useState(t.manufacturer ?? "");
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -112,6 +113,7 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
           default_unit: defaultUnit.trim() === "" ? null : defaultUnit.trim(),
           default_currency:
             defaultCurrency.trim() === "" ? null : defaultCurrency.trim(),
+          manufacturer: manufacturer.trim() === "" ? null : manufacturer.trim(),
         },
       }),
     onSuccess: () => {
@@ -206,6 +208,22 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
                 className="w-20 rounded border border-slate-300 px-2 py-1 text-xs uppercase"
               />
             </div>
+            <div className="grow">
+              <label className="mb-1 block text-xs font-medium text-slate-700">
+                Производитель <span className="text-slate-400">(перетирает значение из файла)</span>
+              </label>
+              <input
+                type="text"
+                value={manufacturer}
+                onChange={(e) => setManufacturer(e.target.value)}
+                placeholder="Milwaukee"
+                maxLength={255}
+                className="block w-full rounded border border-slate-300 px-2 py-1 text-xs"
+              />
+              <div className="mt-0.5 text-[10px] text-slate-500">
+                Применяется ко всем позициям прайса. После сохранения существующие позиции обновятся, ссылки в каталог пересчитаются автоматически.
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -235,6 +253,7 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
 
 function describeTransformations(t: SupplierTransformations): string {
   const parts: string[] = [];
+  if (t.manufacturer) parts.push(`бренд=${t.manufacturer}`);
   if (t.brand_regex) parts.push("бренд из имени");
   if (t.vat_included) parts.push(`НДС ${t.vat_rate ?? 20}%`);
   if (t.default_unit) parts.push(`ед=${t.default_unit}`);

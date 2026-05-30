@@ -167,6 +167,36 @@ def _find_catalog_match(
     return by_art.get(item.article_normalized)
 
 
+async def apply_manufacturer_to_existing(
+    session: AsyncSession, supplier_id: UUID, manufacturer: str
+) -> int:
+    """Принудительно проставляет manufacturer всем активным позициям прайсов
+    поставщика. Используется при установке/смене Transformations.manufacturer
+    через API — без этого нужно было бы пере-импортировать прайс.
+
+    Также обновляет manufacturer_normalized для корректного матчинга.
+    """
+    from fasttender.models import DataSource, DataSourceType
+
+    sources = (
+        await session.scalars(
+            select(DataSource.id).where(
+                DataSource.supplier_id == supplier_id,
+                DataSource.type == DataSourceType.SUPPLIER_PRICELIST,
+            )
+        )
+    ).all()
+    if not sources:
+        return 0
+
+    result = await session.execute(
+        update(Item)
+        .where(Item.source_id.in_(sources), Item.is_active.is_(True))
+        .values(manufacturer=manufacturer, manufacturer_normalized=manufacturer.lower())
+    )
+    return result.rowcount or 0
+
+
 async def backfill_supplier_skus(session: AsyncSession, supplier_id: UUID, prefix: str) -> int:
     """Присваивает supplier_sku всем активным позициям прайсов поставщика,
     у которых он ещё не задан.

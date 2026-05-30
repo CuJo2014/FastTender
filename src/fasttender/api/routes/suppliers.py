@@ -25,7 +25,11 @@ from fasttender.services.importer import (
     ImportReport,
     PriceListImporter,
 )
-from fasttender.services.importer._base import backfill_supplier_skus
+from fasttender.services.importer._base import (
+    apply_manufacturer_to_existing,
+    auto_link_to_catalog,
+    backfill_supplier_skus,
+)
 from fasttender.services.parser import SpecificationParser
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
@@ -99,7 +103,13 @@ async def update_supplier(
     data = payload.model_dump(exclude_unset=True)
     prefix_changed = "prefix" in data and data["prefix"] != supplier.prefix
 
+    # Запоминаем старый manufacturer (если был) чтобы определить смену
+    old_meta_transforms = (supplier.meta or {}).get("transformations") or {}
+    old_manufacturer = old_meta_transforms.get("manufacturer")
+
     # transformations едет отдельно — сохраняем в meta
+    new_manufacturer: str | None = None
+    manufacturer_changed = False
     if "transformations" in data:
         new_meta = dict(supplier.meta) if supplier.meta else {}
         if data["transformations"] is None:
@@ -109,7 +119,9 @@ async def update_supplier(
             new_meta["transformations"] = {
                 k: v for k, v in data["transformations"].items() if v is not None
             }
+            new_manufacturer = new_meta["transformations"].get("manufacturer")
         supplier.meta = new_meta
+        manufacturer_changed = new_manufacturer != old_manufacturer
         data.pop("transformations")
 
     for field_name, value in data.items():
@@ -119,6 +131,22 @@ async def update_supplier(
     # существующим позициям прайсов поставщика
     if prefix_changed and supplier.prefix:
         await backfill_supplier_skus(session, supplier.id, supplier.prefix)
+
+    # Если задан/сменён принудительный производитель — апдейтим существующие
+    # позиции прайса немедленно (без re-import) + переcчитываем catalog-link
+    if manufacturer_changed and new_manufacturer:
+        await apply_manufacturer_to_existing(session, supplier.id, new_manufacturer)
+        # Catalog-link зависит от manufacturer (article+brand match) → пере-расчёт
+        source_ids = (
+            await session.scalars(
+                select(DataSource.id).where(
+                    DataSource.supplier_id == supplier.id,
+                    DataSource.type == DataSourceType.SUPPLIER_PRICELIST,
+                )
+            )
+        ).all()
+        for sid in source_ids:
+            await auto_link_to_catalog(session, sid)
 
     try:
         await session.commit()

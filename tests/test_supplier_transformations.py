@@ -140,6 +140,24 @@ def test_all_transformations_compose() -> None:
     assert out[0].currency == "RUB"
 
 
+def test_manufacturer_force_overrides_file_value() -> None:
+    """force-manufacturer перетирает то что было определено парсером,
+    в отличие от default_unit/default_currency (только пустые)."""
+    cfg = SupplierTransformations(manufacturer="Milwaukee")
+    items = [
+        _item(manufacturer="FUEL™"),  # уже есть значение
+        _item(manufacturer=None),  # пусто
+    ]
+    out = apply_transformations(items, cfg)
+    assert out[0].manufacturer == "Milwaukee"  # перетёрто
+    assert out[1].manufacturer == "Milwaukee"  # заполнено
+
+
+def test_manufacturer_only_makes_config_non_noop() -> None:
+    cfg = SupplierTransformations(manufacturer="Makita")
+    assert not cfg.is_noop
+
+
 def test_noop_returns_same_list() -> None:
     cfg = SupplierTransformations()
     items = [_item()]

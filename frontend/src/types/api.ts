@@ -202,6 +202,7 @@ export interface SupplierTransformations {
   vat_rate?: number;
   default_unit?: string | null;
   default_currency?: string | null;
+  manufacturer?: string | null;
 }
 
 export interface SupplierCreate {

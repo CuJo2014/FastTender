@@ -50,6 +50,15 @@ class SupplierTransformations(BaseModel):
     default_currency: str | None = Field(
         None, description="Подставить в Валюту если пусто (например, «RUB»)."
     )
+    manufacturer: str | None = Field(
+        None,
+        max_length=255,
+        description=(
+            "Принудительный производитель для ВСЕХ позиций прайса (перетирает "
+            "то что было определено из файла). Используется для прайсов "
+            "одного бренда: MIL → «Milwaukee», MKT → «Makita»."
+        ),
+    )
 
     @field_validator("brand_regex")
     @classmethod
@@ -88,6 +97,7 @@ class SupplierTransformations(BaseModel):
             and not self.vat_included
             and self.default_unit is None
             and self.default_currency is None
+            and self.manufacturer is None
         )
 
 
@@ -128,6 +138,11 @@ def apply_transformations(
             updates["unit"] = config.default_unit
         if config.default_currency and not item.currency:
             updates["currency"] = config.default_currency
+
+        # 4. Принудительный производитель — перетирает то что было определено
+        # из файла. Для прайсов одного бренда (MIL, MKT).
+        if config.manufacturer:
+            updates["manufacturer"] = config.manufacturer
 
         out.append(item.model_copy(update=updates) if updates else item)
     return out
