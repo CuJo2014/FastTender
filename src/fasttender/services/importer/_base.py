@@ -29,15 +29,51 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
-def validate_and_dedupe(items: list[ParsedItem], report: ImportReport) -> list[ParsedItem]:
-    """Отсеивает строки без имени и дубли артикулов внутри файла.
+def _dedupe_key(item: ParsedItem) -> tuple[str, str] | None:
+    """Возвращает (тег, ключ) для дедупликации внутри файла.
 
-    Дубликат = две строки с одинаковым `article_normalized` (не NULL).
+    Приоритет (от более надёжного к менее):
+      1. ("code", code_1c)              — если есть, primary identity 1С
+      2. ("article+brand", art|brand)   — артикул в паре с брендом, разные
+                                          бренды с тем же артикулом = разные товары
+      3. ("article", art)               — только артикул, без бренда
+      4. None                            — нет identifier, дедуп не делаем
+    """
+    if item.code_1c:
+        return ("code", item.code_1c.strip())
+    article_norm = normalize_article(item.article)
+    if article_norm:
+        if item.manufacturer:
+            brand = item.manufacturer.strip().lower()
+            return ("article+brand", f"{article_norm}|{brand}")
+        return ("article", article_norm)
+    return None
+
+
+def _human_key_label(key_tuple: tuple[str, str]) -> str:
+    """Для отчёта: человекочитаемое представление ключа дедупа."""
+    tag, value = key_tuple
+    if tag == "code":
+        return f"Код 1С {value}"
+    if tag == "article+brand":
+        art, brand = value.split("|", 1)
+        return f"{art} [{brand}]"
+    return value
+
+
+def validate_and_dedupe(items: list[ParsedItem], report: ImportReport) -> list[ParsedItem]:
+    """Отсеивает строки без имени и дубли по composite ключу.
+
+    Дубликат = две строки с одинаковым `_dedupe_key`. Composite ключ
+    учитывает code_1c, либо пару (артикул + бренд), либо только артикул —
+    одинаковые артикулы у РАЗНЫХ брендов теперь не считаются дубликатами
+    (см. миграцию 0006).
+
     Оставляем первую, остальные попадают в report.duplicates как мягкое
     предупреждение (раздел 16.3 пункт 2: «не падать»).
     """
-    seen: dict[str, int] = {}  # article_normalized → line_number
-    duplicates: dict[str, list[int]] = {}
+    seen: dict[tuple[str, str], int] = {}
+    duplicates: dict[tuple[str, str], list[int]] = {}
     valid: list[ParsedItem] = []
 
     for item in items:
@@ -52,23 +88,26 @@ def validate_and_dedupe(items: list[ParsedItem], report: ImportReport) -> list[P
             report.rows_skipped += 1
             continue
 
-        article_norm = normalize_article(item.article)
-        if article_norm is not None:
-            if article_norm in seen:
-                duplicates.setdefault(article_norm, []).append(item.line_number)
-                report.rows_skipped += 1
-                continue
-            seen[article_norm] = item.line_number
+        key = _dedupe_key(item)
+        if key is None:
+            # Нет identifier — каждая строка уникальна, не дедуплицируем
+            valid.append(item)
+            continue
 
+        if key in seen:
+            duplicates.setdefault(key, []).append(item.line_number)
+            report.rows_skipped += 1
+            continue
+        seen[key] = item.line_number
         valid.append(item)
 
     report.duplicates = [
         DuplicateArticle(
-            article=article,
-            first_line=seen[article],
+            article=_human_key_label(key),
+            first_line=seen[key],
             duplicate_lines=lines,
         )
-        for article, lines in duplicates.items()
+        for key, lines in duplicates.items()
     ]
     return valid
 
@@ -115,26 +154,56 @@ async def upsert_items(
     source_id: UUID,
     items: list[ParsedItem],
 ) -> tuple[int, int]:
-    """MERGE: обновляет существующие по article_normalized, новые INSERT.
+    """MERGE: composite lookup. Существующие обновляются, новые INSERT.
+
+    Lookup keys (приоритет такой же как в _dedupe_key):
+      1. code_1c (когда есть) — primary identity 1С
+      2. (article_normalized, manufacturer_normalized) — для не-1С источников
+      3. article_normalized — fallback когда нет бренда
 
     Возвращает (imported, updated).
     """
+    codes = [i.code_1c.strip() for i in items if i.code_1c]
     articles = [a for a in (normalize_article(i.article) for i in items) if a is not None]
-    existing: dict[str, Item] = {}
+
+    existing_by_code: dict[str, Item] = {}
+    existing_by_art_brand: dict[tuple[str, str | None], Item] = {}
+
+    # Lookup существующих позиций. Грузим всё что может пересечься, потом
+    # маппим в Python — это и проще, и не требует hairy SQL для composite key.
+    if codes:
+        stmt = select(Item).where(Item.source_id == source_id, Item.code_1c.in_(codes))
+        for row in (await session.scalars(stmt)).all():
+            if row.code_1c:
+                existing_by_code[row.code_1c] = row
+
     if articles:
         stmt = select(Item).where(
             Item.source_id == source_id,
             Item.article_normalized.in_(articles),
+            Item.code_1c.is_(None),
         )
         for row in (await session.scalars(stmt)).all():
             if row.article_normalized:
-                existing[row.article_normalized] = row
+                brand = (
+                    row.manufacturer_normalized.strip().lower()
+                    if row.manufacturer_normalized
+                    else None
+                )
+                existing_by_art_brand[(row.article_normalized, brand)] = row
 
     imported = 0
     updated = 0
     for item in items:
-        article_norm = normalize_article(item.article)
-        target = existing.get(article_norm) if article_norm else None
+        target: Item | None = None
+        if item.code_1c:
+            target = existing_by_code.get(item.code_1c.strip())
+        else:
+            article_norm = normalize_article(item.article)
+            brand = item.manufacturer.strip().lower() if item.manufacturer else None
+            if article_norm:
+                target = existing_by_art_brand.get((article_norm, brand))
+
         if target is not None:
             target.article_raw = item.article
             target.code_1c = item.code_1c

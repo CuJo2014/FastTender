@@ -113,15 +113,54 @@ function ReportSummary({ report }: { report: ImportReport }) {
         {report.rows_skipped > 0 && <li>Пропущено: {report.rows_skipped}</li>}
       </ul>
       {report.duplicates.length > 0 && (
-        <div className="mt-2 text-xs">
-          Дубликаты артикулов ({report.duplicates.length}):{" "}
-          {report.duplicates
-            .slice(0, 5)
-            .map((d) => d.article)
-            .join(", ")}
-          {report.duplicates.length > 5 && "…"}
+        <div className="mt-2 space-y-1.5 text-xs">
+          <div>
+            Дубликаты ({report.duplicates.length}):{" "}
+            {report.duplicates
+              .slice(0, 5)
+              .map((d) => d.article)
+              .join(", ")}
+            {report.duplicates.length > 5 && "…"}
+          </div>
+          <button
+            type="button"
+            onClick={() => downloadDuplicatesCsv(report)}
+            className="rounded-md border border-green-300 bg-white px-2 py-0.5 font-medium hover:bg-green-100"
+          >
+            ⬇ Скачать полный список ({report.duplicates.length}) в CSV
+          </button>
         </div>
       )}
     </div>
   );
+}
+
+function downloadDuplicatesCsv(report: ImportReport): void {
+  // UTF-8 BOM для Excel-совместимости + ; как разделитель (как в export.py)
+  const header = "Ключ дедупликации;Первая строка;Дубли (строки)";
+  const lines = report.duplicates.map((d) => {
+    const dupLines = d.duplicate_lines.join(", ");
+    // Эскейпим точку с запятой и кавычки внутри значения
+    const key = d.article.includes(";") || d.article.includes('"')
+      ? `"${d.article.replace(/"/g, '""')}"`
+      : d.article;
+    return `${key};${d.first_line};${dupLines}`;
+  });
+  const csv = "﻿" + [header, ...lines].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+
+  const ts = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const safeName = (report.source_name || "import")
+    .replace(/[^a-zA-Z0-9_\-А-Яа-яЁё ]/g, "_")
+    .slice(0, 60);
+  const filename = `duplicates_${safeName}_${ts}.csv`;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
