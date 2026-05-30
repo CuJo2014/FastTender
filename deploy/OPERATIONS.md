@@ -51,6 +51,91 @@ WHERE id = (SELECT ds.id FROM data_source ds
 
 После сброса — перезалить прайс в UI (REPLACE).
 
+## Чистка всех данных одного поставщика
+
+Удалить **все позиции прайса** конкретного поставщика, оставив самого
+поставщика и его data_source (с настройками: prefix, transformations,
+column_mapping). Полезно когда хочется начать импорт с чистого листа,
+не пересоздавая поставщика.
+
+Сначала найди ID:
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+SELECT s.id, s.name, s.prefix, ds.id AS source_id,
+  (SELECT count(*) FROM item WHERE source_id = ds.id) AS items
+FROM supplier s
+LEFT JOIN data_source ds ON ds.supplier_id = s.id
+ORDER BY s.name;"
+```
+
+Удали все позиции этого источника (CASCADE удалит match_candidate;
+verification.chosen_item_id обнулится):
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+DELETE FROM item WHERE source_id = '<SOURCE_UUID>';"
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "VACUUM ANALYZE item;"
+```
+
+Опционально — сбросить кэш column_mapping чтобы следующий импорт
+заново определил шапку:
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+UPDATE data_source SET config = '{}'::jsonb, last_synced_at = NULL
+WHERE id = '<SOURCE_UUID>';"
+```
+
+После этого поставщик в UI остаётся, его прайс — пустой. Можно сразу
+залить новый файл.
+
+## Удаление поставщика целиком
+
+Полностью убрать поставщика вместе со всеми его данными — позициями,
+маппингом, настройками, ссылками из истории матчей.
+
+> **Каскад:** `supplier → data_source → item → match_candidate` — все
+> удалятся автоматически (ON DELETE CASCADE). `verification.chosen_item_id`
+> обнулится через SET NULL — старые верификации сохраняются, но указывают
+> на «удалённую позицию».
+>
+> Восстановить из бэкапа можно только через restore-db (целиком).
+> Если нужно сохранить историю — лучше **не удалять**, а оставить
+> поставщика с пустым прайсом (раздел выше).
+
+Найди ID:
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+SELECT id, name, prefix FROM supplier ORDER BY created_at;"
+```
+
+**Перед удалением сделай бэкап:**
+
+```bash
+cd /home/master/fasttender && ./deploy/bootstrap.sh backup-db
+```
+
+Удали:
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+DELETE FROM supplier WHERE id = '<SUPPLIER_UUID>';"
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "VACUUM ANALYZE item, data_source, supplier;"
+```
+
+Проверь:
+
+```bash
+docker exec ft_prod_postgres psql -U fasttender -d fasttender -c "
+SELECT s.name, count(i.id) AS items
+FROM supplier s
+LEFT JOIN data_source ds ON ds.supplier_id = s.id
+LEFT JOIN item i ON i.source_id = ds.id
+GROUP BY s.id, s.name ORDER BY s.name;"
+```
+
 ## Бэкап / восстановление БД
 
 ```bash
