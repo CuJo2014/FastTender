@@ -70,6 +70,55 @@ def _item_dedupe_key(item: Item) -> tuple[str, str] | None:
     return ("article", art)
 
 
+async def backfill_supplier_skus(
+    session: AsyncSession, supplier_id: UUID, prefix: str
+) -> int:
+    """Присваивает supplier_sku всем активным позициям прайсов поставщика,
+    у которых он ещё не задан.
+
+    Используется при установке/смене Supplier.prefix через API — иначе
+    SKU появляются только при следующем импорте, что нелогично с UX.
+
+    Существующие непустые supplier_sku НЕ трогаем (даже если префикс сменился) —
+    SKU — стабильный идентификатор, на него уже могли сослаться. Mix старых
+    и новых префиксов — приемлемая цена за стабильность.
+    """
+    from fasttender.models import DataSource, DataSourceType
+
+    sources = (
+        await session.scalars(
+            select(DataSource).where(
+                DataSource.supplier_id == supplier_id,
+                DataSource.type == DataSourceType.SUPPLIER_PRICELIST,
+            )
+        )
+    ).all()
+
+    backfilled = 0
+    for source in sources:
+        assigner = await build_sku_assigner(session, source.id, prefix)
+        items = (
+            await session.scalars(
+                select(Item)
+                .where(
+                    Item.source_id == source.id,
+                    Item.supplier_sku.is_(None),
+                    Item.is_active.is_(True),
+                )
+                .order_by(Item.created_at, Item.article_normalized, Item.id)
+            )
+        ).all()
+        for item in items:
+            key = _item_dedupe_key(item)
+            if key is not None and key in assigner.reserved:
+                item.supplier_sku = assigner.reserved[key]
+            else:
+                item.supplier_sku = f"{prefix}-{assigner.next_num:06d}"
+                assigner.next_num += 1
+            backfilled += 1
+    return backfilled
+
+
 @dataclass
 class SkuAssigner:
     """Генератор внутренних SKU позиций прайса (см. миграцию 0007).

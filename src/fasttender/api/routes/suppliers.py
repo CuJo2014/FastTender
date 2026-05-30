@@ -25,6 +25,7 @@ from fasttender.services.importer import (
     ImportReport,
     PriceListImporter,
 )
+from fasttender.services.importer._base import backfill_supplier_skus
 from fasttender.services.parser import SpecificationParser
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
@@ -93,8 +94,15 @@ async def update_supplier(
             detail={"message": "Поставщик не найден"},
         )
     data = payload.model_dump(exclude_unset=True)
+    prefix_changed = "prefix" in data and data["prefix"] != supplier.prefix
     for field_name, value in data.items():
         setattr(supplier, field_name, value)
+
+    # Если впервые установили (или сменили) префикс — backfill SKU
+    # существующим позициям прайсов поставщика
+    if prefix_changed and supplier.prefix:
+        await backfill_supplier_skus(session, supplier.id, supplier.prefix)
+
     try:
         await session.commit()
     except IntegrityError as exc:

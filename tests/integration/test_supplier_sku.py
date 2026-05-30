@@ -197,6 +197,45 @@ async def test_two_suppliers_with_same_prefix_rejected_by_db(
         await _make_supplier(session, "Второй", "ABC")
 
 
+async def test_setting_prefix_via_api_backfills_existing_items(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """Установка/смена prefix через PATCH должна автоматически
+    присвоить SKU существующим позициям прайса (не требуя ре-импорта).
+    """
+    from fasttender.services.importer._base import backfill_supplier_skus
+
+    supplier = await _make_supplier(session, "Поставщик", None)
+    path = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-1", "Болт", "10"],
+            ["A-2", "Гайка", "5"],
+            ["A-3", "Шайба", "1"],
+        ],
+    )
+    await PriceListImporter().import_file(
+        session, supplier_id=supplier.id, path=path, mode=ImportMode.REPLACE
+    )
+    await session.commit()
+
+    # Симулируем PATCH /suppliers/{id} с prefix=NEW
+    supplier.prefix = "NEW"
+    backfilled = await backfill_supplier_skus(session, supplier.id, "NEW")
+    await session.commit()
+
+    assert backfilled == 3
+    items = {
+        i.article_normalized: i.supplier_sku
+        for i in (await session.scalars(select(Item))).all()
+    }
+    assert items["A1"] == "NEW-000001"
+    assert items["A2"] == "NEW-000002"
+    assert items["A3"] == "NEW-000003"
+
+
 async def test_merge_backfills_sku_when_prefix_added_later(
     session: AsyncSession,
     tmp_path: Path,
