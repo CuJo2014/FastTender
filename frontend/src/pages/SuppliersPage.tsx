@@ -10,8 +10,8 @@ import { formatDateTime } from "../lib/format";
 export function SuppliersPage() {
   return (
     <div className="space-y-6">
-      <SupplierList />
       <NewSupplierForm />
+      <SupplierList />
     </div>
   );
 }
