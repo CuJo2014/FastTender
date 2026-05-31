@@ -178,6 +178,44 @@ def test_exclude_fields_skips_code_1c_entirely() -> None:
     assert mapping.get(SpecField.NAME) == 2
 
 
+def test_sku_in_parens_matches_article() -> None:
+    """«Код товара (SKU)» — частый заголовок в прайсах поставщиков.
+    Раньше «sku» не ловилось из-за того что скобки ломали word boundary."""
+    rows = [
+        ["Наименование", "Код товара (SKU)", "Цена"],
+        ["Болт", "ABC-001", 100],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 1
+
+
+def test_kod_tovara_alone_matches_article_in_pricelist() -> None:
+    """«Код товара» (без SKU) теперь матчится как ARTICLE.
+    Для прайсов это удобно — у каталога CODE_1C приоритетнее (priority order)."""
+    rows = [
+        ["Наименование", "Код товара", "Цена"],
+        ["Болт", "ABC-001", 100],
+    ]
+    result = detect_header(rows, exclude_fields=frozenset({SpecField.CODE_1C}))
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 1
+
+
+def test_unit_with_trailing_period() -> None:
+    """«Ед.изм.» (с точкой в конце) — частый формат."""
+    rows = [
+        ["Артикул", "Наименование", "Ед.изм.", "Цена"],
+        ["A-1", "Болт", "шт", 100],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.UNIT) == 2
+
+
 def test_real_code_1c_still_recognized() -> None:
     """Колонка «Код» (без квалификатора) по-прежнему попадает в CODE_1C —
     это типичный заголовок 1С-выгрузок."""
