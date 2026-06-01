@@ -454,11 +454,13 @@ async def test_e2e_eval_run_with_real_template_file(
     assert metrics.recall_at_k_hits == 1
     assert metrics.precision_at_1_hits == 1
 
-    # Не сломалось при двухуровневой шапке
+    # Не сломалось при двухуровневой шапке.
+    # Шаблон обновлён (17 колонок с code_1c): col 14 = «Результат матчера:
+    # артикул», col 17 = «Совпало? (да/нет)».
     wb_out = openpyxl.load_workbook(output_path)
     ws = wb_out["Датасет"]
-    assert ws.cell(row=3, column=13).value == "BLT-M10-040-ZN"
-    assert ws.cell(row=3, column=15).value == "да"
+    assert ws.cell(row=3, column=14).value == "BLT-M10-040-ZN"
+    assert ws.cell(row=3, column=17).value == "да"
     wb_out.close()
 
 
