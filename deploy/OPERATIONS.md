@@ -160,6 +160,49 @@ LEFT JOIN item i ON i.source_id = ds.id
 GROUP BY s.id, s.name ORDER BY s.name;"
 ```
 
+## External backup в Google Drive
+
+С 1 июня 2026 настроен автоматический бэкап БД в Google Drive
+(papka `FastTender-Backups`). Один раз в день в 03:00 UTC:
+
+1. `bootstrap.sh backup-db` → локальный дамп `./backups/fasttender_*.sql.gz`
+2. `rclone copy → gdrive:FastTender-Backups/`
+3. Локальная ротация: удаляем файлы старше 14 дней
+4. Удалённая ротация: удаляем на Drive старше 90 дней
+
+Скрипт: `deploy/backup-cron.sh`. Cron-entry: `0 3 * * * .../backup-cron.sh`.
+
+**Лог:** `logs/backup.log`. Проверить последний запуск:
+```bash
+tail -20 /home/master/fasttender/logs/backup.log
+```
+
+**Список бэкапов на Drive:**
+```bash
+~/.local/bin/rclone lsl gdrive:FastTender-Backups/
+```
+
+**Скачать бэкап с Drive:**
+```bash
+~/.local/bin/rclone copy gdrive:FastTender-Backups/fasttender_YYYYMMDD-HHMMSS.sql.gz /tmp/
+```
+
+**Восстановление из удалённого бэкапа:**
+```bash
+~/.local/bin/rclone copy gdrive:FastTender-Backups/fasttender_YYYYMMDD-HHMMSS.sql.gz ./backups/
+./deploy/bootstrap.sh restore-db backups/fasttender_YYYYMMDD-HHMMSS.sql.gz
+```
+
+**Ручной запуск бэкапа (с upload):**
+```bash
+/home/master/fasttender/deploy/backup-cron.sh
+```
+
+**Перевыпустить OAuth-токен** (если истёк или скомпрометирован):
+1. `~/.local/bin/rclone authorize "drive"` — пройти OAuth заново
+2. Скопировать новый token JSON в `~/.config/rclone/rclone.conf` секцию `[gdrive]` → поле `token`
+3. Проверить: `~/.local/bin/rclone lsd gdrive:`
+
 ## Бэкап / восстановление БД
 
 ```bash

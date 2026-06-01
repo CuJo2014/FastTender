@@ -29,7 +29,7 @@
 ## Прочее в бэклоге
 
 ### Инфраструктура
-- **External backup (S3/scp/rsync)** — сейчас бэкапы только на той же машине в `./backups/`. Любой отказ диска = потеря всего.
+- ~~**External backup (S3/scp/rsync)**~~ ✓ done 2026-06-01: ежедневный rclone → Google Drive (см. `deploy/OPERATIONS.md`)
 - **Bind-mount postgres volume** — превентивная защита от случайного `docker volume prune`
 - **Systemd watchdog для авто-recovery** — пока инцидентов нет, но было бы хорошо иметь
 - **Cleanup deactivated** — автоматическая чистка раз в неделю (сейчас вручную)
