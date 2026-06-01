@@ -4,6 +4,7 @@ import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel
@@ -100,9 +101,89 @@ async def import_catalog(
         tmp_path.unlink(missing_ok=True)
 
 
-@router.get("/search", summary="Поиск по каталогу (TODO Phase 1)")
-async def search_catalog(q: str = "", limit: int = 20) -> dict[str, list]:
-    return {"results": []}
+class CatalogSearchResult(BaseModel):
+    """Одна позиция в результате поиска по каталогу."""
+
+    item_id: UUID
+    code_1c: str | None = None
+    article: str | None = None
+    name: str
+    manufacturer: str | None = None
+    category_path: str | None = None
+    price: float | None = None
+    currency: str | None = None
+    unit: str | None = None
+
+
+@router.get(
+    "/search",
+    response_model=list[CatalogSearchResult],
+    summary="Поиск по каталогу для ручного выбора менеджером",
+)
+async def search_catalog(
+    q: str = Query("", description="Поиск по code_1c / артикулу / наименованию"),
+    limit: int = Query(20, ge=1, le=100),
+    session: AsyncSession = Depends(get_session),
+) -> list[CatalogSearchResult]:
+    """Используется когда менеджер знает что нужен конкретный товар
+    каталога (Код 1С Ц0000001234) и хочет привязать его напрямую,
+    минуя топ-5 кандидатов матчера.
+
+    Стратегия поиска:
+      1. Точное совпадение code_1c (case-sensitive) — top priority
+      2. Точное совпадение article_normalized (uppercase)
+      3. ILIKE по name — для поиска «по части имени»
+    """
+    query = q.strip()
+    if not query:
+        return []
+
+    source_id = await session.scalar(
+        select(DataSource.id).where(DataSource.type == DataSourceType.COMPANY_CATALOG)
+    )
+    if source_id is None:
+        return []
+
+    # Нормализуем запрос для article (как делает normalize_article: uppercase
+    # без пробелов и дефисов)
+    article_query = "".join(c for c in query.upper() if c.isalnum())
+
+    # Один SELECT с условием OR: code_1c точное / article точное / name ILIKE.
+    # ORDER BY дополнительно сортирует чтобы точные совпадения были выше.
+    name_pattern = f"%{query}%"
+    stmt = (
+        select(Item)
+        .where(
+            Item.source_id == source_id,
+            Item.is_active.is_(True),
+            (Item.code_1c == query)
+            | (Item.article_normalized == article_query)
+            | Item.name.ilike(name_pattern),
+        )
+        .order_by(
+            # Точные code_1c/article выше, потом по имени
+            (Item.code_1c == query).desc(),
+            (Item.article_normalized == article_query).desc(),
+            Item.name,
+        )
+        .limit(limit)
+    )
+    rows = (await session.scalars(stmt)).all()
+
+    return [
+        CatalogSearchResult(
+            item_id=item.id,
+            code_1c=item.code_1c,
+            article=item.article_raw,
+            name=item.name,
+            manufacturer=item.manufacturer,
+            category_path=item.category_path,
+            price=float(item.price) if item.price is not None else None,
+            currency=item.currency,
+            unit=item.unit,
+        )
+        for item in rows
+    ]
 
 
 # --- Helpers ---

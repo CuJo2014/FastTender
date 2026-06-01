@@ -5,6 +5,7 @@ import type {
   AutoConfirmRequest,
   AutoConfirmResponse,
   CatalogInfo,
+  CatalogSearchResult,
   ImportMode,
   ImportReport,
   PaginatedSpecItems,
@@ -125,6 +126,11 @@ export const api = {
   // --- Catalog ---
 
   getCatalogInfo: () => request<CatalogInfo>("/catalog/info"),
+
+  searchCatalog: (q: string, limit = 20) =>
+    request<CatalogSearchResult[]>(
+      `/catalog/search?q=${encodeURIComponent(q)}&limit=${limit}`,
+    ),
 
   importCatalog: async (file: File, mode: ImportMode = "replace") => {
     const form = new FormData();

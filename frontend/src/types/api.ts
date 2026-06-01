@@ -203,6 +203,18 @@ export interface CatalogInfo {
   created_at: string | null;
 }
 
+export interface CatalogSearchResult {
+  item_id: string;
+  code_1c: string | null;
+  article: string | null;
+  name: string;
+  manufacturer: string | null;
+  category_path: string | null;
+  price: number | null;
+  currency: string | null;
+  unit: string | null;
+}
+
 // --- Suppliers ---
 
 export interface SupplierTransformations {

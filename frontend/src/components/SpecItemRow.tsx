@@ -3,6 +3,7 @@ import type { SpecItemRead, VerificationDecision } from "../types/api";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { CandidatesTable } from "./CandidatesTable";
+import { CatalogSearchBox } from "./CatalogSearchBox";
 
 interface Props {
   item: SpecItemRead;
@@ -86,6 +87,11 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
                 candidates={item.candidates_suppliers}
                 selectedItemId={item.verification?.chosen_item_id ?? null}
                 onConfirm={(itemId) => onVerify(item.id, "confirmed", itemId)}
+                disabled={pending}
+              />
+
+              <CatalogSearchBox
+                onPick={(itemId) => onVerify(item.id, "confirmed", itemId)}
                 disabled={pending}
               />
 

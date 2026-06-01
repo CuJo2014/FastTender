@@ -23,6 +23,8 @@ export function SpecificationDetailPage() {
 function DetailContent({ specId }: { specId: string }) {
   const queryClient = useQueryClient();
   const [autoConfirmThreshold, setAutoConfirmThreshold] = useState("0.9");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const specQuery = useQuery({
     queryKey: ["specifications", specId],
@@ -34,8 +36,8 @@ function DetailContent({ specId }: { specId: string }) {
   });
 
   const itemsQuery = useQuery({
-    queryKey: ["specifications", specId, "items"],
-    queryFn: () => api.getSpecificationItems(specId),
+    queryKey: ["specifications", specId, "items", page, pageSize],
+    queryFn: () => api.getSpecificationItems(specId, page, pageSize),
     enabled: specQuery.data?.status === "matched"
       || specQuery.data?.status === "verified"
       || specQuery.data?.status === "exported"
@@ -285,10 +287,77 @@ function DetailContent({ specId }: { specId: string }) {
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                page={page}
+                pageSize={pageSize}
+                total={itemsQuery.data?.total ?? 0}
+                onPageChange={setPage}
+                onPageSizeChange={(s) => {
+                  setPageSize(s);
+                  setPage(1);
+                }}
+              />
             </div>
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+function Pagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (s: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-2 text-sm">
+      <div className="text-slate-600">
+        {total === 0 ? "Нет строк" : <>Строки <strong>{from}–{to}</strong> из <strong>{total}</strong></>}
+      </div>
+      <div className="flex items-center gap-2">
+        <label className="text-xs text-slate-500">На странице:</label>
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+        >
+          <option value={50}>50</option>
+          <option value={100}>100</option>
+          <option value={200}>200</option>
+        </select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          disabled={page <= 1}
+        >
+          ←
+        </Button>
+        <span className="tabular-nums text-slate-600">
+          {page} / {totalPages}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          disabled={page >= totalPages}
+        >
+          →
+        </Button>
+      </div>
     </div>
   );
 }
