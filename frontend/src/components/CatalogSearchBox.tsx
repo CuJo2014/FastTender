@@ -26,7 +26,7 @@ export function CatalogSearchBox({ onPick, disabled }: Props) {
   return (
     <div className="rounded-md border border-slate-200 bg-white">
       <div className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium uppercase text-slate-500">
-        Найти в каталоге по Коду 1С / Артикулу / Наименованию
+        Найти в каталоге и прайсах по Коду 1С / SKU / Артикулу / Наименованию
       </div>
       <form onSubmit={handleSearch} className="flex items-center gap-2 px-3 py-2">
         <input
@@ -69,7 +69,8 @@ export function CatalogSearchBox({ onPick, disabled }: Props) {
         <table className="min-w-full border-t border-slate-200 text-sm">
           <thead className="text-left text-xs uppercase text-slate-500">
             <tr>
-              <th className="px-3 py-1">Код 1С</th>
+              <th className="px-3 py-1">Источник</th>
+              <th className="px-3 py-1">Идентификатор</th>
               <th className="px-3 py-1">Артикул</th>
               <th className="px-3 py-1">Наименование</th>
               <th className="px-3 py-1">Бренд</th>
@@ -80,8 +81,20 @@ export function CatalogSearchBox({ onPick, disabled }: Props) {
           <tbody className="divide-y divide-slate-200">
             {results.map((r) => (
               <tr key={r.item_id} className="hover:bg-slate-50">
+                <td className="px-3 py-1">
+                  <span
+                    className={
+                      "inline-block rounded px-1.5 py-0.5 text-[10px] " +
+                      (r.source_type === "company_catalog"
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-amber-50 text-amber-700")
+                    }
+                  >
+                    {r.source_label}
+                  </span>
+                </td>
                 <td className="px-3 py-1 font-mono text-xs">
-                  {r.code_1c ?? "—"}
+                  {r.code_1c ?? r.supplier_sku ?? "—"}
                 </td>
                 <td className="px-3 py-1 font-mono text-xs">
                   {r.article ?? "—"}

@@ -102,10 +102,11 @@ async def import_catalog(
 
 
 class CatalogSearchResult(BaseModel):
-    """Одна позиция в результате поиска по каталогу."""
+    """Одна позиция в результате поиска (каталог компании + прайсы поставщиков)."""
 
     item_id: UUID
     code_1c: str | None = None
+    supplier_sku: str | None = None
     article: str | None = None
     name: str
     manufacturer: str | None = None
@@ -113,77 +114,108 @@ class CatalogSearchResult(BaseModel):
     price: float | None = None
     currency: str | None = None
     unit: str | None = None
+    # Откуда пришла позиция: "catalog" или "supplier:<имя>"
+    source_type: str  # company_catalog | supplier_pricelist
+    source_label: str  # «Каталог» или «Прайс: Milwaukee»
 
 
 @router.get(
     "/search",
     response_model=list[CatalogSearchResult],
-    summary="Поиск по каталогу для ручного выбора менеджером",
+    summary="Поиск по каталогу и прайсам для ручного выбора менеджером",
 )
 async def search_catalog(
-    q: str = Query("", description="Поиск по code_1c / артикулу / наименованию"),
+    q: str = Query("", description="Поиск по code_1c / supplier_sku / артикулу / наименованию"),
     limit: int = Query(20, ge=1, le=100),
+    include_suppliers: bool = Query(True, description="Включать прайсы поставщиков (default true)"),
     session: AsyncSession = Depends(get_session),
 ) -> list[CatalogSearchResult]:
     """Используется когда менеджер знает что нужен конкретный товар
-    каталога (Код 1С Ц0000001234) и хочет привязать его напрямую,
-    минуя топ-5 кандидатов матчера.
+    (Ц0000001234 / MIL-000042 / артикул / часть имени) и хочет
+    привязать его напрямую, минуя топ-5 кандидатов матчера.
 
     Стратегия поиска:
-      1. Точное совпадение code_1c (case-sensitive) — top priority
-      2. Точное совпадение article_normalized (uppercase)
-      3. ILIKE по name — для поиска «по части имени»
+      1. Точное совпадение code_1c — top priority (каталог)
+      2. Точное совпадение supplier_sku — для прайсов поставщиков (MIK-000042)
+      3. Точное совпадение article_normalized (uppercase)
+      4. ILIKE по name — для поиска «по части имени»
+
+    По умолчанию ищет и в каталоге, и в активных прайсах. Сортировка:
+    каталог выше прайсов при равной релевантности.
     """
     query = q.strip()
     if not query:
         return []
 
-    source_id = await session.scalar(
-        select(DataSource.id).where(DataSource.type == DataSourceType.COMPANY_CATALOG)
-    )
-    if source_id is None:
-        return []
-
-    # Нормализуем запрос для article (как делает normalize_article: uppercase
-    # без пробелов и дефисов)
+    # Нормализуем запрос для article
     article_query = "".join(c for c in query.upper() if c.isalnum())
-
-    # Один SELECT с условием OR: code_1c точное / article точное / name ILIKE.
-    # ORDER BY дополнительно сортирует чтобы точные совпадения были выше.
     name_pattern = f"%{query}%"
+
+    # Фильтр источников
+    source_types = [DataSourceType.COMPANY_CATALOG]
+    if include_suppliers:
+        source_types.append(DataSourceType.SUPPLIER_PRICELIST)
+
     stmt = (
-        select(Item)
+        select(Item, DataSource)
+        .join(DataSource, DataSource.id == Item.source_id)
         .where(
-            Item.source_id == source_id,
+            DataSource.type.in_(source_types),
             Item.is_active.is_(True),
             (Item.code_1c == query)
+            | (Item.supplier_sku == query)
             | (Item.article_normalized == article_query)
             | Item.name.ilike(name_pattern),
         )
         .order_by(
-            # Точные code_1c/article выше, потом по имени
+            # Точные code/sku/article выше, каталог выше прайсов, потом по имени
             (Item.code_1c == query).desc(),
+            (Item.supplier_sku == query).desc(),
             (Item.article_normalized == article_query).desc(),
+            (DataSource.type == DataSourceType.COMPANY_CATALOG).desc(),
             Item.name,
         )
         .limit(limit)
     )
-    rows = (await session.scalars(stmt)).all()
+    rows = (await session.execute(stmt)).all()
 
-    return [
-        CatalogSearchResult(
-            item_id=item.id,
-            code_1c=item.code_1c,
-            article=item.article_raw,
-            name=item.name,
-            manufacturer=item.manufacturer,
-            category_path=item.category_path,
-            price=float(item.price) if item.price is not None else None,
-            currency=item.currency,
-            unit=item.unit,
+    # Для лейблов поставщиков подтягиваем имя
+    supplier_ids = {ds.supplier_id for _, ds in rows if ds.supplier_id is not None}
+    supplier_labels: dict[UUID, str] = {}
+    if supplier_ids:
+        from fasttender.models import Supplier
+
+        sup_rows = (
+            await session.execute(
+                select(Supplier.id, Supplier.name).where(Supplier.id.in_(supplier_ids))
+            )
+        ).all()
+        supplier_labels = {sid: name for sid, name in sup_rows}
+
+    out: list[CatalogSearchResult] = []
+    for item, ds in rows:
+        if ds.type == DataSourceType.COMPANY_CATALOG:
+            label = "Каталог"
+        else:
+            sup_name = supplier_labels.get(ds.supplier_id, "?")
+            label = f"Прайс: {sup_name}"
+        out.append(
+            CatalogSearchResult(
+                item_id=item.id,
+                code_1c=item.code_1c,
+                supplier_sku=item.supplier_sku,
+                article=item.article_raw,
+                name=item.name,
+                manufacturer=item.manufacturer,
+                category_path=item.category_path,
+                price=float(item.price) if item.price is not None else None,
+                currency=item.currency,
+                unit=item.unit,
+                source_type=ds.type.value,
+                source_label=label,
+            )
         )
-        for item in rows
-    ]
+    return out
 
 
 # --- Helpers ---

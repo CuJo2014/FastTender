@@ -120,6 +120,51 @@ async def test_search_no_catalog_returns_empty(client: AsyncClient) -> None:
     assert resp.json() == []
 
 
+async def test_search_includes_supplier_pricelist_by_sku(
+    client: AsyncClient, committed_db: AsyncSession, tmp_path: Path
+) -> None:
+    """Поиск находит позиции и в прайсах поставщиков (по supplier_sku или артикулу)."""
+    from fasttender.models import Supplier
+    from fasttender.services.importer import PriceListImporter
+
+    await _seed(committed_db, tmp_path)
+    supplier = Supplier(name="ТестПоставщик", prefix="TST", contact_email=None, meta={})
+    committed_db.add(supplier)
+    await committed_db.flush()
+    pl = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["UNIQUE-001", "Уникальный товар поставщика", "99"],
+        ],
+    )
+    await PriceListImporter().import_file(
+        committed_db, supplier_id=supplier.id, path=pl, mode=ImportMode.REPLACE
+    )
+    await committed_db.commit()
+
+    # 1. По уникальному имени — должна найтись прайс-позиция
+    resp = await client.get("/api/v1/catalog/search?q=Уникальный")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert any(r["source_type"] == "supplier_pricelist" for r in data)
+    sup_result = next(r for r in data if r["source_type"] == "supplier_pricelist")
+    assert sup_result["source_label"] == "Прайс: ТестПоставщик"
+    assert sup_result["supplier_sku"] == "TST-000001"
+
+    # 2. По supplier_sku точно
+    resp = await client.get("/api/v1/catalog/search?q=TST-000001")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["supplier_sku"] == "TST-000001"
+
+    # 3. С include_suppliers=false — прайсы не возвращаются
+    resp = await client.get("/api/v1/catalog/search?q=Уникальный&include_suppliers=false")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
 async def test_search_exact_matches_above_ilike(
     client: AsyncClient, committed_db: AsyncSession, tmp_path: Path
 ) -> None:

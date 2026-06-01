@@ -206,6 +206,7 @@ export interface CatalogInfo {
 export interface CatalogSearchResult {
   item_id: string;
   code_1c: string | null;
+  supplier_sku: string | null;
   article: string | null;
   name: string;
   manufacturer: string | null;
@@ -213,6 +214,8 @@ export interface CatalogSearchResult {
   price: number | null;
   currency: string | null;
   unit: string | null;
+  source_type: "company_catalog" | "supplier_pricelist";
+  source_label: string;
 }
 
 // --- Suppliers ---
