@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
@@ -25,6 +25,20 @@ function DetailContent({ specId }: { specId: string }) {
   const [autoConfirmThreshold, setAutoConfirmThreshold] = useState("0.9");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+
+  // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы
+  // могла приклеиться ровно ниже неё (без перекрытия).
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+  const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
+  useEffect(() => {
+    if (!stickyHeaderRef.current) return;
+    const el = stickyHeaderRef.current;
+    const ro = new ResizeObserver(([entry]) => {
+      setStickyHeaderHeight(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const specQuery = useQuery({
     queryKey: ["specifications", specId],
@@ -113,6 +127,7 @@ function DetailContent({ specId }: { specId: string }) {
 
   return (
     <div className="space-y-6">
+      <div ref={stickyHeaderRef} className="sticky top-0 z-20 bg-slate-50 pb-2">
       <Card>
         <CardHeader
           title={spec.source_filename}
@@ -179,6 +194,7 @@ function DetailContent({ specId }: { specId: string }) {
           <CancelButton specId={specId} status={spec.status} />
         </CardBody>
       </Card>
+      </div>
 
       {isReady && (
         <Card>
@@ -258,16 +274,19 @@ function DetailContent({ specId }: { specId: string }) {
               Загрузка строк…
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div>
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead
+                  className="sticky z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 shadow-sm"
+                  style={{ top: stickyHeaderHeight }}
+                >
                   <tr>
-                    <th className="px-4 py-3 font-medium w-12">№</th>
-                    <th className="px-4 py-3 font-medium">Исходная позиция</th>
-                    <th className="px-4 py-3 font-medium w-28">Кол-во</th>
-                    <th className="px-4 py-3 font-medium">Топ кандидат каталога</th>
-                    <th className="px-4 py-3 font-medium w-40">Решение</th>
-                    <th className="px-4 py-3 font-medium w-32" />
+                    <th className="bg-slate-50 px-4 py-3 font-medium w-12">№</th>
+                    <th className="bg-slate-50 px-4 py-3 font-medium">Исходная позиция</th>
+                    <th className="bg-slate-50 px-4 py-3 font-medium w-28">Кол-во</th>
+                    <th className="bg-slate-50 px-4 py-3 font-medium">Топ кандидат каталога</th>
+                    <th className="bg-slate-50 px-4 py-3 font-medium w-40">Решение</th>
+                    <th className="bg-slate-50 px-4 py-3 font-medium w-32" />
                   </tr>
                 </thead>
                 <tbody>
