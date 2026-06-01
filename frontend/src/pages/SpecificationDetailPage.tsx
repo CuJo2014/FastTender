@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import type { VerificationDecision } from "../types/api";
+import type { SpecificationStatus, VerificationDecision } from "../types/api";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
@@ -144,7 +144,7 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
 
-          <div className="grid flex-1 grid-cols-4 gap-4 text-center text-sm">
+          <div className="grid flex-1 grid-cols-5 gap-4 text-center text-sm">
             <Counter label="Всего" value={spec.counts.items_total} />
             <Counter
               label="≥ 90%"
@@ -161,7 +161,20 @@ function DetailContent({ specId }: { specId: string }) {
               value={spec.counts.items_not_found}
               valueClass="text-conf-low"
             />
+            <Counter
+              label="Закрыто"
+              value={`${spec.counts.items_verified} / ${spec.counts.items_total}`}
+              valueClass={
+                spec.counts.items_verified === spec.counts.items_total
+                  ? "text-conf-high"
+                  : spec.counts.items_verified > 0
+                  ? "text-conf-medium"
+                  : "text-slate-400"
+              }
+            />
           </div>
+
+          <CancelButton specId={specId} status={spec.status} />
         </CardBody>
       </Card>
 
@@ -286,7 +299,7 @@ function Counter({
   valueClass,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   valueClass?: string;
 }) {
   return (
@@ -297,6 +310,87 @@ function Counter({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function CancelButton({
+  specId,
+  status,
+}: {
+  specId: string;
+  status: SpecificationStatus;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: () => api.cancelSpecification(specId, reason.trim() || undefined),
+    onSuccess: () => {
+      setOpen(false);
+      setReason("");
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({ queryKey: ["specifications"] });
+    },
+  });
+
+  // Кнопка не нужна для уже отменённых / выгруженных
+  if (status === "cancelled" || status === "exported") return null;
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="text-xs text-red-600 hover:underline"
+        title="Отказаться от обеспечения поставки"
+      >
+        Отказаться от спецификации
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3">
+      <div className="text-sm font-medium text-red-900">
+        Отказаться от поставки?
+      </div>
+      <textarea
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Причина (опционально)"
+        rows={2}
+        maxLength={1024}
+        className="block w-full rounded border border-red-300 bg-white px-2 py-1 text-sm"
+      />
+      <div className="flex items-center gap-2">
+        <Button
+          variant="danger"
+          size="sm"
+          onClick={() => mutation.mutate()}
+          disabled={mutation.isPending}
+        >
+          {mutation.isPending ? "Отказ…" : "Подтвердить отказ"}
+        </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setReason("");
+          }}
+          className="text-xs text-slate-500 hover:underline"
+        >
+          Передумал
+        </button>
+      </div>
+      {mutation.isError && (
+        <div className="text-xs text-red-700">
+          {mutation.error instanceof ApiError
+            ? `Ошибка ${mutation.error.status}`
+            : "Не удалось отменить"}
+        </div>
+      )}
     </div>
   );
 }

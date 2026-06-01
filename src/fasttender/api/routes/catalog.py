@@ -44,9 +44,7 @@ async def get_catalog_info(session: AsyncSession = Depends(get_session)) -> Cata
     if source is None:
         return CatalogInfo()
     items_count = await session.scalar(
-        select(func.count(Item.id)).where(
-            Item.source_id == source.id, Item.is_active.is_(True)
-        )
+        select(func.count(Item.id)).where(Item.source_id == source.id, Item.is_active.is_(True))
     )
     return CatalogInfo(
         items_count=int(items_count or 0),

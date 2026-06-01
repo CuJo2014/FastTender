@@ -113,6 +113,12 @@ export const api = {
       { method: "POST", json: payload },
     ),
 
+  cancelSpecification: (specId: string, reason?: string) =>
+    request<SpecificationRead>(
+      `/specifications/${specId}/cancel`,
+      { method: "POST", json: { reason: reason ?? null } },
+    ),
+
   exportUrl: (specId: string, format: "xlsx" | "csv" = "xlsx") =>
     `${BASE}/specifications/${specId}/export?format=${format}`,
 

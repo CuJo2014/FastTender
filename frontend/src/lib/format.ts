@@ -40,10 +40,11 @@ const STATUS_LABELS: Record<SpecificationStatus, string> = {
   parsed: "Распарсен",
   matching: "Матчинг…",
   match_failed: "Ошибка матчинга",
-  matched: "Готов",
-  reviewing: "На проверке",
-  verified: "Проверен",
+  matched: "На верификации",
+  reviewing: "На верификации",
+  verified: "Полностью верифицирован",
   exported: "Выгружен",
+  cancelled: "Отменён",
 };
 
 export function statusLabel(status: SpecificationStatus): string {
@@ -63,11 +64,17 @@ export function isInProgress(status: SpecificationStatus): boolean {
 export function statusTone(
   status: SpecificationStatus,
 ): "neutral" | "info" | "success" | "warning" | "danger" {
-  if (status === "matched" || status === "verified" || status === "exported") {
-    return "success";
+  if (status === "verified" || status === "exported") {
+    return "success"; // зелёный
+  }
+  if (status === "matched" || status === "reviewing") {
+    return "warning"; // жёлтый — ждёт менеджера
   }
   if (status === "parse_failed" || status === "match_failed") {
     return "danger";
+  }
+  if (status === "cancelled") {
+    return "neutral";
   }
   if (isInProgress(status)) return "info";
   return "neutral";

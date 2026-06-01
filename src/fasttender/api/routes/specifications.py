@@ -21,6 +21,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -35,6 +36,7 @@ from fasttender.models import (
     Specification,
     SpecificationStatus,
     SpecItem,
+    Verification,
 )
 from fasttender.schemas.specification import (
     CandidateRead,
@@ -333,6 +335,11 @@ async def verify_spec_item(
     await session.commit()
     await session.refresh(verification)
 
+    # Auto-promote: если все строки спеки получили verification — статус
+    # переключается на VERIFIED (UX-фидбэк 1 июня 2026).
+    await _auto_promote_to_verified(session, spec_id)
+    await session.commit()
+
     return VerifyResponse(
         spec_item_id=verification.spec_item_id,
         decision=verification.decision,
@@ -341,6 +348,66 @@ async def verify_spec_item(
         notes=verification.notes,
         decided_at=verification.updated_at,
     )
+
+
+async def _auto_promote_to_verified(session: AsyncSession, spec_id: UUID) -> None:
+    """Если все spec_item имеют Verification — статус спеки → VERIFIED."""
+    spec = await session.get(Specification, spec_id)
+    if spec is None or spec.status in (
+        SpecificationStatus.VERIFIED,
+        SpecificationStatus.EXPORTED,
+        SpecificationStatus.CANCELLED,
+    ):
+        return
+    total = await session.scalar(
+        select(func.count()).select_from(SpecItem).where(SpecItem.spec_id == spec_id)
+    )
+    verified = await session.scalar(
+        select(func.count())
+        .select_from(Verification)
+        .join(SpecItem, SpecItem.id == Verification.spec_item_id)
+        .where(SpecItem.spec_id == spec_id)
+    )
+    if total and verified and int(verified) >= int(total):
+        spec.status = SpecificationStatus.VERIFIED
+
+
+class CancelRequest(BaseModel):
+    """Тело POST /specifications/{id}/cancel."""
+
+    reason: str | None = Field(None, max_length=1024)
+
+
+@router.post(
+    "/{spec_id}/cancel",
+    response_model=SpecificationRead,
+    summary="Отменить спецификацию (отказ от поставки)",
+)
+async def cancel_specification(
+    spec_id: UUID,
+    payload: CancelRequest,
+    session: AsyncSession = Depends(get_session),
+) -> SpecificationRead:
+    """Менеджер отказывается обеспечивать поставку по этой спецификации.
+
+    Статус → CANCELLED, причина (если указана) пишется в error_message
+    (переиспользуем поле, чтобы не плодить сущности).
+    """
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+    spec.status = SpecificationStatus.CANCELLED
+    if payload.reason:
+        spec.error_message = f"Отказ: {payload.reason}"
+    else:
+        spec.error_message = "Отказ от поставки"
+    await session.commit()
+    await session.refresh(spec)
+    counts = await _compute_counts(session, spec.id)
+    return SpecificationRead.model_validate({**spec.__dict__, "counts": counts})
 
 
 @router.post(
@@ -460,11 +527,25 @@ async def _compute_counts(
     low = sum(1 for _, c in rows if c is not None and float(c) < min_threshold)
     not_found = items_total - len(matched_ids) + low
 
+    # Счётчик верифицированных (любое решение менеджера: confirmed/rejected/
+    # not_found/new_item_requested). UX-фидбэк 1 июня 2026.
+    items_verified = (
+        await session.scalar(
+            select(func.count())
+            .select_from(Verification)
+            .join(SpecItem, SpecItem.id == Verification.spec_item_id)
+            .where(SpecItem.spec_id == spec_id)
+        )
+        or 0
+    )
+
     return SpecificationCounts(
         items_total=int(items_total),
         items_matched_high=high,
         items_matched_medium=medium,
         items_not_found=not_found,
+        items_verified=int(items_verified),
+        items_pending=int(items_total) - int(items_verified),
     )
 
 

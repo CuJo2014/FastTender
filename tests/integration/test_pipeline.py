@@ -98,7 +98,9 @@ async def test_happy_path_processes_spec_end_to_end(
 
     # Статус после успешной обработки
     await session.refresh(spec)
-    assert spec.status is SpecificationStatus.MATCHED
+    # После матчинга — REVIEWING (требует верификации), не MATCHED.
+    # Изменено по UX-фидбэку 1 июня 2026.
+    assert spec.status is SpecificationStatus.REVIEWING
     assert spec.completed_at is not None
     assert spec.error_message is None
 

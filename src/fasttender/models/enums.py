@@ -30,10 +30,11 @@ class SpecificationStatus(StrEnum):
     PARSED = "parsed"
     MATCHING = "matching"
     MATCH_FAILED = "match_failed"
-    MATCHED = "matched"
+    MATCHED = "matched"  # deprecated: оставлен для совместимости. Pipeline → REVIEWING
     REVIEWING = "reviewing"
     VERIFIED = "verified"
     EXPORTED = "exported"
+    CANCELLED = "cancelled"  # менеджер отказался обеспечивать поставку
 
 
 class MatchType(StrEnum):

@@ -11,7 +11,8 @@ export type SpecificationStatus =
   | "matched"
   | "reviewing"
   | "verified"
-  | "exported";
+  | "exported"
+  | "cancelled";
 
 export type DataSourceType =
   | "company_catalog"
@@ -38,6 +39,8 @@ export interface SpecificationCounts {
   items_matched_high: number;
   items_matched_medium: number;
   items_not_found: number;
+  items_verified: number;
+  items_pending: number;
 }
 
 export interface SpecificationRead {

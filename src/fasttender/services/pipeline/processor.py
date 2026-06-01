@@ -134,7 +134,10 @@ class SpecificationProcessor:
             result = await self._matcher.match(match_input, top_n=self._top_n)
             self._persist_candidates(spec_item.id, result)
 
-        await self._transition(spec, SpecificationStatus.MATCHED)
+        # После матчинга — REVIEWING (требует верификации). Раньше ставили
+        # MATCHED со словом «Готов» — это путало менеджеров (UX-фидбэк
+        # 1 июня 2026: спецификация не готова пока не пройдена верификация).
+        await self._transition(spec, SpecificationStatus.REVIEWING)
         spec.completed_at = datetime.now(UTC)
         await self._session.commit()
 

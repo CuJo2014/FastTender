@@ -173,7 +173,8 @@ async def test_full_http_flow_upload_then_get_status_then_get_items(
     status_resp = await client.get(f"/api/v1/specifications/{spec_id}")
     assert status_resp.status_code == 200
     spec = status_resp.json()
-    assert spec["status"] == "matched"
+    # После матчинга статус «reviewing» (UX-фидбэк 1 июня 2026)
+    assert spec["status"] == "reviewing"
     assert spec["counts"]["items_total"] == 2
     assert spec["counts"]["items_matched_high"] == 2
 
