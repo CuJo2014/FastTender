@@ -160,6 +160,11 @@ LEFT JOIN item i ON i.source_id = ds.id
 GROUP BY s.id, s.name ORDER BY s.name;"
 ```
 
+## Disaster Recovery
+
+Полное восстановление на новом сервере: см. **[RECOVERY.md](RECOVERY.md)**
+— пошаговый план на ~60 минут.
+
 ## External backup в Google Drive
 
 С 1 июня 2026 настроен автоматический бэкап БД в Google Drive

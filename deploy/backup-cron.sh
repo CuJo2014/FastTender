@@ -40,9 +40,15 @@ echo "${LOG_PREFIX} uploaded to ${REMOTE}/$(basename "${LATEST}")"
 DELETED_LOCAL=$(find backups/ -name 'fasttender_*.sql.gz' -mtime "+${LOCAL_RETENTION_DAYS}" -print -delete | wc -l)
 echo "${LOG_PREFIX} local cleanup: deleted ${DELETED_LOCAL} files older than ${LOCAL_RETENTION_DAYS}d"
 
-# 4. Ротация на Drive: удалить старше REMOTE_RETENTION_DAYS
-"${RCLONE}" delete "${REMOTE}/" --min-age "${REMOTE_RETENTION_DAYS}d" 2>&1 | grep -v "^$" || true
+# 4. Ротация на Drive: удалить старше REMOTE_RETENTION_DAYS.
+#    --max-age ограничивает diapason чтобы случайно не задеть config/
+"${RCLONE}" delete "${REMOTE}/" --include "fasttender_*.sql.gz" --min-age "${REMOTE_RETENTION_DAYS}d" 2>&1 | grep -v "^$" || true
 echo "${LOG_PREFIX} remote cleanup: applied min-age=${REMOTE_RETENTION_DAYS}d"
+
+# 5. Sync конфигов которые нужны для disaster-recovery (см. RECOVERY.md).
+#    rclone copy идемпотентен: грузит только если файл изменился.
+"${RCLONE}" copy "${DEPLOY_DIR}/.env.prod" "${REMOTE}/config/" --progress=false --stats=0 2>&1
+echo "${LOG_PREFIX} synced config files"
 
 echo "${LOG_PREFIX} backup-cron done"
 echo "---"
