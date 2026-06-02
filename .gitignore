@@ -47,6 +47,14 @@ backups/
 uploads/
 /var/lib/fasttender/
 
+# Прайсы поставщиков и выгрузки данных — коммерческие данные.
+# Трекаем только шаблоны (gold dataset) и README.
+docs/pricelists/*
+docs/*.xlsx
+docs/*.csv
+!docs/gold_dataset_template_new.xlsx
+!docs/pricelists/README.md
+
 # Node / Frontend
 node_modules/
 dist/
