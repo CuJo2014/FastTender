@@ -129,7 +129,7 @@ function DetailContent({ specId }: { specId: string }) {
 
   return (
     <div className="space-y-6">
-      <div ref={stickyHeaderRef} className="sticky top-0 z-20 bg-slate-50 pb-2">
+      <div ref={stickyHeaderRef} className="sticky top-14 z-20 bg-slate-50 pb-2">
       <Card>
         <CardHeader
           title={spec.source_filename}
@@ -278,17 +278,27 @@ function DetailContent({ specId }: { specId: string }) {
           ) : (
             <div>
               <table className="min-w-full text-sm">
-                <thead
-                  className="sticky z-10 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500 shadow-sm"
-                  style={{ top: stickyHeaderHeight }}
-                >
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  {/* sticky на <th>, а не на <thead> — для кросс-браузерной
+                      совместимости (Safari/старый Firefox требуют именно так).
+                      top = высота шапки спеки + 56px (header h-14). */}
                   <tr>
-                    <th className="bg-slate-50 px-4 py-3 font-medium w-12">№</th>
-                    <th className="bg-slate-50 px-4 py-3 font-medium">Исходная позиция</th>
-                    <th className="bg-slate-50 px-4 py-3 font-medium w-28">Кол-во</th>
-                    <th className="bg-slate-50 px-4 py-3 font-medium">Топ кандидат каталога</th>
-                    <th className="bg-slate-50 px-4 py-3 font-medium w-40">Решение</th>
-                    <th className="bg-slate-50 px-4 py-3 font-medium w-32" />
+                    {[
+                      { label: "№", width: "w-12" },
+                      { label: "Исходная позиция" },
+                      { label: "Кол-во", width: "w-28" },
+                      { label: "Топ кандидат каталога" },
+                      { label: "Решение", width: "w-40" },
+                      { label: "", width: "w-32" },
+                    ].map((col, i) => (
+                      <th
+                        key={i}
+                        className={`sticky z-10 bg-slate-50 px-4 py-3 font-medium shadow-sm ${col.width ?? ""}`}
+                        style={{ top: stickyHeaderHeight + 56 }}
+                      >
+                        {col.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>

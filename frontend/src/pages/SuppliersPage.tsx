@@ -27,7 +27,7 @@ function SupplierList() {
       <CardHeader
         title={`Поставщики${data && data.length > 0 ? ` (${data.length})` : ""}`}
         description="Управление прайс-листами"
-        className="sticky top-0 z-10 rounded-t-lg shadow-sm"
+        className="sticky top-14 z-10 rounded-t-lg shadow-sm"
       />
       <CardBody>
         {isLoading && (

@@ -10,8 +10,8 @@ const NAV_ITEMS = [
 export function AppLayout() {
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center gap-8 px-6 py-3">
+      <header className="sticky top-0 z-30 h-14 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-full max-w-7xl items-center gap-8 px-6">
           <div className="text-lg font-semibold tracking-tight">FastTender</div>
           <nav className="flex gap-1">
             {NAV_ITEMS.map((item) => (
