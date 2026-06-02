@@ -32,7 +32,7 @@
 - ~~**External backup (S3/scp/rsync)**~~ ✓ done 2026-06-01: ежедневный rclone → Google Drive (см. `deploy/OPERATIONS.md`)
 - **Bind-mount postgres volume** — превентивная защита от случайного `docker volume prune`
 - **Systemd watchdog для авто-recovery** — пока инцидентов нет, но было бы хорошо иметь
-- **Cleanup deactivated** — автоматическая чистка раз в неделю (сейчас вручную)
+- ~~**Cleanup deactivated**~~ ✓ done 2026-06-02: ежедневный cron в 04:20 UTC удаляет «осиротевшие» (без ссылок) deactivated позиции
 
 ### Парсер / Импорт
 - **Несколько ценовых колонок** — см. выше
