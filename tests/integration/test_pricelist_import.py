@@ -5,10 +5,14 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fasttender.models import DataSource, DataSourceType, Item, Supplier
+from fasttender.models.enums import MatchType
+from fasttender.models.match_candidate import MatchCandidate
+from fasttender.models.spec_item import SpecItem
+from fasttender.models.specification import Specification
 from fasttender.services.importer import (
     CatalogImporter,
     ImportError,
@@ -343,3 +347,72 @@ async def test_merge_mode_updates_existing_pricelist_items(
     by_article = {i.article_normalized: i for i in items}
     assert by_article["A1"].price == Decimal("150")
     assert by_article["A1"].name == "Новая цена"
+
+
+async def test_replace_reimport_keeps_match_candidate_valid(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Регрессия инцидента 2026-06-02 (фидбэк MIK): REPLACE-ре-импорт прайса
+    не плодит deactivated-дубли, а match_candidate.item_id остаётся на том же
+    физически живом (active) item. До рефакторинга REPLACE деактивировал все
+    старые позиции и вставлял новые с новыми UUID — исторические ссылки из
+    match_candidate указывали на «битые» deactivated-записи навсегда.
+    """
+    supplier = Supplier(name="МИК", prefix="MIK", contact_email=None, meta={})
+    session.add(supplier)
+    await session.flush()
+
+    pl = make_xlsx(
+        tmp_path / "mik.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["A-1", "Кабель ВВГ 3х2.5", "100"],
+            ["A-2", "Кабель ВВГ 3х1.5", "80"],
+        ],
+    )
+    await importer.import_file(session, supplier_id=supplier.id, path=pl, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    item = await session.scalar(select(Item).where(Item.article_normalized == "A1"))
+    original_item_id = item.id
+    original_sku = item.supplier_sku
+
+    # Менеджер сматчил спеку на эту прайс-позицию
+    spec = Specification(source_filename="spec.xlsx", storage_path="/tmp/spec.xlsx")
+    session.add(spec)
+    await session.flush()
+    spec_item = SpecItem(spec_id=spec.id, line_number=1, name_raw="кабель ввг 3*2.5")
+    session.add(spec_item)
+    await session.flush()
+    mc = MatchCandidate(
+        spec_item_id=spec_item.id,
+        item_id=item.id,
+        confidence=0.95,
+        match_type=MatchType.EXACT_ARTICLE,
+        rank=1,
+    )
+    session.add(mc)
+    await session.commit()
+    mc_id = mc.id
+
+    # Ре-импорт того же прайса (REPLACE)
+    await importer.import_file(session, supplier_id=supplier.id, path=pl, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    # 1. Никаких дублей: ровно 2 позиции, обе active
+    total = await session.scalar(select(func.count()).select_from(Item))
+    active = await session.scalar(select(func.count()).select_from(Item).where(Item.is_active))
+    assert total == 2, f"ожидалось 2 позиции, накопились дубли: {total}"
+    assert active == 2
+
+    # 2. match_candidate.item_id указывает на тот же живой item
+    mc_after = await session.get(MatchCandidate, mc_id)
+    assert mc_after is not None
+    assert mc_after.item_id == original_item_id, "FK уехал на новый UUID"
+    linked = await session.get(Item, mc_after.item_id)
+    assert linked.is_active, "match указывает на deactivated-копию (исходный баг)"
+
+    # 3. supplier_sku стабилен
+    assert linked.supplier_sku == original_sku
