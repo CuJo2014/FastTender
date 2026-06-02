@@ -11,7 +11,7 @@
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -363,8 +363,13 @@ def build_orm_item(source_id: UUID, parsed: ParsedItem, *, supplier_sku: str | N
     attributes остаётся {} — характеристики в Фазе 1 не извлекаются (раздел 4.2).
     supplier_sku передаётся только при импорте прайса поставщика с заданным
     префиксом — см. SkuAssigner и build_sku_assigner.
+
+    id присваиваем явно (а не через mapped column default=uuid4) чтобы
+    он был доступен ДО flush'а — нужно для REPLACE-логики которая
+    собирает touched_ids set до отправки SQL.
     """
     return Item(
+        id=uuid4(),
         source_id=source_id,
         article_raw=parsed.article,
         article_normalized=normalize_article(parsed.article),
@@ -403,15 +408,21 @@ async def upsert_items(
     items: list[ParsedItem],
     *,
     sku_assigner: SkuAssigner | None = None,
-) -> tuple[int, int]:
-    """MERGE: composite lookup. Существующие обновляются, новые INSERT.
+    include_inactive: bool = False,
+) -> tuple[int, int, set[UUID]]:
+    """MERGE/REPLACE: composite lookup. Существующие обновляются, новые INSERT.
 
     Lookup keys (приоритет такой же как в _dedupe_key):
       1. code_1c (когда есть) — primary identity 1С
       2. (article_normalized, manufacturer_normalized) — для не-1С источников
       3. article_normalized — fallback когда нет бренда
 
-    Возвращает (imported, updated).
+    include_inactive: если True, ищем существующие позиции среди
+    deactivated тоже — нужно для REPLACE-режима чтобы re-активировать
+    «потерянные» позиции вместо создания дублей.
+
+    Возвращает (imported, updated, touched_ids) — IDs всех позиций
+    которые мы либо обновили, либо вставили (need для REPLACE-deactivate).
     """
     codes = [i.code_1c.strip() for i in items if i.code_1c]
     articles = [a for a in (normalize_article(i.article) for i in items) if a is not None]
@@ -419,17 +430,24 @@ async def upsert_items(
     existing_by_code: dict[str, Item] = {}
     existing_by_art_brand: dict[tuple[str, str | None], Item] = {}
 
-    # Lookup существующих позиций. Грузим всё что может пересечься, потом
-    # маппим в Python — это и проще, и не требует hairy SQL для composite key.
+    # Lookup существующих позиций. Для MERGE — только active, для REPLACE —
+    # и inactive тоже (re-активируем «вернувшуюся» позицию вместо создания
+    # дубля). Грузим всё что может пересечься, потом маппим в Python.
+    base_filter = [Item.source_id == source_id]
+    if not include_inactive:
+        base_filter.append(Item.is_active.is_(True))
+
     if codes:
-        stmt = select(Item).where(Item.source_id == source_id, Item.code_1c.in_(codes))
+        stmt = select(Item).where(*base_filter, Item.code_1c.in_(codes))
         for row in (await session.scalars(stmt)).all():
             if row.code_1c:
-                existing_by_code[row.code_1c] = row
+                # active имеет приоритет над inactive при коллизии
+                if row.code_1c not in existing_by_code or row.is_active:
+                    existing_by_code[row.code_1c] = row
 
     if articles:
         stmt = select(Item).where(
-            Item.source_id == source_id,
+            *base_filter,
             Item.article_normalized.in_(articles),
             Item.code_1c.is_(None),
         )
@@ -440,10 +458,13 @@ async def upsert_items(
                     if row.manufacturer_normalized
                     else None
                 )
-                existing_by_art_brand[(row.article_normalized, brand)] = row
+                key = (row.article_normalized, brand)
+                if key not in existing_by_art_brand or row.is_active:
+                    existing_by_art_brand[key] = row
 
     imported = 0
     updated = 0
+    touched_ids: set[UUID] = set()
     for item in items:
         target: Item | None = None
         if item.code_1c:
@@ -467,16 +488,19 @@ async def upsert_items(
             target.price = item.price
             target.currency = item.currency
             target.unit = item.unit
-            target.is_active = True
+            target.is_active = True  # re-активация если была deactivated
             # Backfill SKU для позиций, импортированных до появления feature
             if sku_assigner is not None and not target.supplier_sku:
                 target.supplier_sku = sku_assigner.assign(item)
+            touched_ids.add(target.id)
             updated += 1
         else:
             sku = sku_assigner.assign(item) if sku_assigner is not None else None
-            session.add(build_orm_item(source_id, item, supplier_sku=sku))
+            new_item = build_orm_item(source_id, item, supplier_sku=sku)
+            session.add(new_item)
+            touched_ids.add(new_item.id)  # id генерится python-side (uuid4)
             imported += 1
-    return imported, updated
+    return imported, updated, touched_ids
 
 
 async def apply_to_source(
@@ -502,13 +526,36 @@ async def apply_to_source(
     )
 
     if mode is ImportMode.REPLACE:
-        report.rows_deactivated = await deactivate_existing(session, source.id)
-        for parsed in parsed_items:
-            sku = sku_assigner.assign(parsed) if sku_assigner is not None else None
-            session.add(build_orm_item(source.id, parsed, supplier_sku=sku))
-        report.rows_imported = len(parsed_items)
+        # REPLACE через upsert: находим существующие (включая deactivated)
+        # по composite-ключу — обновляем in-place, сохраняем ID. Это критично
+        # потому что на Item ссылаются match_candidate и verification — при
+        # старом подходе (deactivate-all + insert-new) исторические ссылки
+        # указывали на «битые» deactivated-записи, хотя физически товар жив.
+        # В конце deactivate всё что не попало в новый файл.
+        imported, updated, touched_ids = await upsert_items(
+            session,
+            source.id,
+            parsed_items,
+            sku_assigner=sku_assigner,
+            include_inactive=True,
+        )
+        # flush чтобы INSERT'ы новых items дошли до БД до UPDATE
+        await session.flush()
+        deactivate_filters = [Item.source_id == source.id, Item.is_active.is_(True)]
+        if touched_ids:
+            # list() — SQLAlchemy не всегда корректно разворачивает set
+            deactivate_filters.append(Item.id.notin_(list(touched_ids)))
+        deactivated_result = await session.execute(
+            update(Item)
+            .where(*deactivate_filters)
+            .values(is_active=False)
+            .execution_options(synchronize_session=False)
+        )
+        report.rows_imported = imported
+        report.rows_updated = updated
+        report.rows_deactivated = deactivated_result.rowcount or 0
     elif mode is ImportMode.MERGE:
-        imported, updated = await upsert_items(
+        imported, updated, _touched = await upsert_items(
             session, source.id, parsed_items, sku_assigner=sku_assigner
         )
         report.rows_imported = imported
