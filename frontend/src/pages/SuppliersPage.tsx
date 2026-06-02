@@ -23,10 +23,11 @@ function SupplierList() {
   });
 
   return (
-    <Card>
+    <Card className="overflow-visible">
       <CardHeader
-        title="Поставщики"
+        title={`Поставщики${data && data.length > 0 ? ` (${data.length})` : ""}`}
         description="Управление прайс-листами"
+        className="sticky top-0 z-10 rounded-t-lg shadow-sm"
       />
       <CardBody>
         {isLoading && (

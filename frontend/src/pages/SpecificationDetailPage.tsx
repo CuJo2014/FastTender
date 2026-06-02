@@ -28,14 +28,16 @@ function DetailContent({ specId }: { specId: string }) {
 
   // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы
   // могла приклеиться ровно ниже неё (без перекрытия).
+  // getBoundingClientRect().height включает padding/border — это и есть
+  // визуальная высота которую thead должен «обойти».
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
   useEffect(() => {
     if (!stickyHeaderRef.current) return;
     const el = stickyHeaderRef.current;
-    const ro = new ResizeObserver(([entry]) => {
-      setStickyHeaderHeight(entry.contentRect.height);
-    });
+    const measure = () => setStickyHeaderHeight(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

@@ -17,13 +17,20 @@ export function CardHeader({
   title,
   description,
   actions,
+  className,
 }: {
   title: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
+  className?: string;
 }) {
   return (
-    <div className="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+    <div
+      className={clsx(
+        "flex items-start justify-between border-b border-slate-200 bg-white px-6 py-4",
+        className,
+      )}
+    >
       <div>
         <h2 className="text-lg font-semibold">{title}</h2>
         {description && (
