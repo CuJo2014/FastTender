@@ -16,10 +16,11 @@ Phase 1:
 
 import shutil
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -182,6 +183,37 @@ async def get_specification(
             session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
         ),
     )
+
+
+@router.delete(
+    "/{spec_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить спецификацию (строки, кандидаты, верификации — каскадно)",
+)
+async def delete_specification(
+    spec_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Полное удаление спецификации.
+
+    Каскадно (FK ondelete=CASCADE) удаляются spec_item → match_candidate,
+    verification. Позиции каталога/прайсов (Item) НЕ затрагиваются — на них
+    лишь ссылались кандидаты. Загруженный файл удаляется best-effort.
+    """
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+    storage_path = spec.storage_path
+    await session.delete(spec)
+    await session.commit()
+    # Удаляем исходный файл, если ещё лежит в upload-каталоге
+    if storage_path:
+        with suppress(OSError):
+            Path(storage_path).unlink(missing_ok=True)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

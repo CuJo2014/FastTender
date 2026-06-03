@@ -120,6 +120,9 @@ export const api = {
       { method: "POST", json: { reason: reason ?? null } },
     ),
 
+  deleteSpecification: (specId: string) =>
+    request<void>(`/specifications/${specId}`, { method: "DELETE" }),
+
   exportUrl: (specId: string, format: "xlsx" | "csv" = "xlsx") =>
     `${BASE}/specifications/${specId}/export?format=${format}`,
 

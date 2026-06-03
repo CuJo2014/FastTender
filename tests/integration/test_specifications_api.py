@@ -14,13 +14,13 @@ import openpyxl
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from fasttender.core.celery_app import celery_app
 from fasttender.core.config import get_settings
 from fasttender.main import create_app
-from fasttender.models import DataSource, DataSourceType, Item
+from fasttender.models import DataSource, DataSourceType, Item, SpecItem
 from fasttender.services.importer import CatalogImporter, ImportMode
 from tests.fixtures.spec_builders import make_xlsx
 from tests.integration.conftest import TEST_DB_URL
@@ -252,6 +252,57 @@ async def test_items_include_manually_chosen_item_not_in_candidates(
     assert v["chosen_item"]["item_id"] == str(washer.id)
     assert v["chosen_item"]["name"] == "Шайба М10 DIN125"
     assert v["chosen_item"]["source_type"] == "company_catalog"
+
+
+async def test_delete_specification_removes_it_and_cascades(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """DELETE спецификации: 204, сама спека и её строки/кандидаты/верификации
+    удалены; позиции каталога (Item) НЕ затронуты."""
+    await _seed_catalog(committed_db, tmp_path)
+    catalog_before = await committed_db.scalar(select(func.count()).select_from(Item))
+
+    upload = await client.post(
+        "/api/v1/specifications/",
+        files={
+            "file": (
+                "spec.xlsx",
+                _make_spec_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+    )
+    spec_id = upload.json()["spec_id"]
+
+    # есть строки после матчинга
+    items_before = (await client.get(f"/api/v1/specifications/{spec_id}/items")).json()
+    assert items_before["total"] == 2
+
+    resp = await client.delete(f"/api/v1/specifications/{spec_id}")
+    assert resp.status_code == 204
+
+    # спецификация исчезла
+    assert (await client.get(f"/api/v1/specifications/{spec_id}")).status_code == 404
+    # строки каскадно удалены
+    remaining = await committed_db.scalar(
+        select(func.count()).select_from(SpecItem).where(SpecItem.spec_id == spec_id)
+    )
+    assert remaining == 0
+    # каталог не пострадал
+    catalog_after = await committed_db.scalar(select(func.count()).select_from(Item))
+    assert catalog_after == catalog_before
+
+
+async def test_delete_specification_404_for_unknown_id(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    resp = await client.delete(
+        "/api/v1/specifications/00000000-0000-0000-0000-000000000009"
+    )
+    assert resp.status_code == 404
 
 
 async def test_get_specification_404_for_unknown_id(

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDateTime, statusLabel, statusTone, isInProgress } from "../lib/format";
@@ -7,6 +7,7 @@ import { Button } from "../components/ui/Button";
 import { Card, CardHeader } from "../components/ui/Card";
 
 export function SpecificationsListPage() {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["specifications"],
     queryFn: api.listSpecifications,
@@ -17,6 +18,24 @@ export function SpecificationsListPage() {
       return anyInProgress ? 2000 : false;
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.deleteSpecification(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications"] });
+    },
+  });
+
+  const handleDelete = (id: string, filename: string) => {
+    if (
+      window.confirm(
+        `Удалить спецификацию «${filename}»? Строки, кандидаты и результаты ` +
+          `верификации будут удалены безвозвратно.`,
+      )
+    ) {
+      deleteMutation.mutate(id);
+    }
+  };
 
   return (
     <Card>
@@ -108,11 +127,27 @@ export function SpecificationsListPage() {
                     {formatDateTime(spec.created_at)}
                   </td>
                   <td className="px-6 py-3 text-right">
-                    <Link to={`/specifications/${spec.id}`}>
-                      <Button variant="ghost" size="sm">
-                        Открыть →
+                    <div className="flex items-center justify-end gap-1">
+                      <Link to={`/specifications/${spec.id}`}>
+                        <Button variant="ghost" size="sm">
+                          Открыть →
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:bg-red-50"
+                        disabled={
+                          deleteMutation.isPending &&
+                          deleteMutation.variables === spec.id
+                        }
+                        onClick={() =>
+                          handleDelete(spec.id, spec.source_filename)
+                        }
+                      >
+                        Удалить
                       </Button>
-                    </Link>
+                    </div>
                   </td>
                 </tr>
               ))}
