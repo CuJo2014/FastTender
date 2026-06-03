@@ -207,6 +207,21 @@ def _normalize_header_cell(value: Any) -> str | None:
     return s
 
 
+def _synonym_matches(header_text: str, synonym: str) -> bool:
+    """Заголовок совпадает с синонимом: точно, «начинается с» (с границей
+    слова) или содержит как отдельное слово."""
+    if header_text == synonym:
+        return True
+    # «Начинается с» с границей слова (пробел/пунктуация/конец строки)
+    if header_text.startswith(synonym):
+        tail = header_text[len(synonym) :]
+        if not tail or tail[0] in " :-.,/":
+            return True
+    # Содержит как отдельное слово — \b ловит границы вокруг пунктуации тоже
+    # («Код товара (SKU)» → совпадение по «sku»). re.escape — для p/n и т.п.
+    return bool(re.search(rf"\b{re.escape(synonym)}\b", header_text))
+
+
 def _match_field(
     header_text: str, *, exclude_fields: frozenset[SpecField] | None = None
 ) -> SpecField | None:
@@ -229,18 +244,25 @@ def _match_field(
         if negatives and header_text in negatives:
             continue  # это false-positive для этого поля, пропускаем
         for synonym in COLUMN_SYNONYMS[field]:
-            if header_text == synonym:
+            if _synonym_matches(header_text, synonym):
                 return field
-            # «Начинается с» с границей слова (пробел или конец строки)
-            if header_text.startswith(synonym):
-                tail = header_text[len(synonym) :]
-                if not tail or tail[0] in " :-.,/":
-                    return field
-            # Содержит как отдельное слово — \b ловит границы вокруг
-            # пунктуации тоже («Код товара (SKU)» → совпадение по «sku»).
-            # re.escape на случай если в синониме есть спецсимволы (p/n).
-            if re.search(rf"\b{re.escape(synonym)}\b", header_text):
-                return field
+
+    # Прайсы поставщиков: CODE_1C исключён, но колонка «Код» у поставщика —
+    # это ИХ артикул/код позиции (пример RUI: «Код» = «ri.377.20»). Без этого
+    # у позиции нет стабильного идентификатора → REPLACE-upsert не может
+    # сматчить её при ре-импорте (всё деактивируется и вставляется заново).
+    # Отдаём код-подобный заголовок в ARTICLE, если ARTICLE не запрещён и это
+    # не штрих-код/ТНВЭД (negative-list CODE_1C).
+    if (
+        exclude_fields
+        and SpecField.CODE_1C in exclude_fields
+        and SpecField.ARTICLE not in exclude_fields
+    ):
+        negatives = _FIELD_NEGATIVES.get(SpecField.CODE_1C)
+        if not (negatives and header_text in negatives):
+            for synonym in COLUMN_SYNONYMS[SpecField.CODE_1C]:
+                if _synonym_matches(header_text, synonym):
+                    return SpecField.ARTICLE
     return None
 
 

@@ -227,3 +227,56 @@ def test_real_code_1c_still_recognized() -> None:
     assert result is not None
     _, mapping = result
     assert mapping.get(SpecField.CODE_1C) == 1
+
+
+def test_kod_becomes_article_in_pricelist() -> None:
+    """В прайсе поставщика (CODE_1C исключён) колонка «Код» = их артикул.
+    Регрессия RUI: без этого позиции без артикула не матчатся при ре-импорте."""
+    rows = [
+        ["Код", "Наименование", "Цена без НДС", "Количество"],
+        ["ri.377.20", "Борфреза", 931, 81],
+    ]
+    result = detect_header(rows, exclude_fields=frozenset({SpecField.CODE_1C}))
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 0
+    assert mapping.get(SpecField.CODE_1C) is None
+
+
+def test_kod_stays_code_1c_without_exclude() -> None:
+    """Без исключения CODE_1C (каталог) «Код» остаётся CODE_1C, не ARTICLE."""
+    rows = [
+        ["Код", "Наименование", "Цена"],
+        ["Ц0000000100", "Болт", 10],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.CODE_1C) == 0
+    assert mapping.get(SpecField.ARTICLE) is None
+
+
+def test_barcode_not_promoted_to_article_in_pricelist() -> None:
+    """«Штрих-код» — negative-list CODE_1C: НЕ должен стать ARTICLE в прайсе."""
+    rows = [
+        ["Штрих-код", "Наименование", "Цена"],
+        ["4600000000017", "Болт", 10],
+    ]
+    result = detect_header(rows, exclude_fields=frozenset({SpecField.CODE_1C}))
+    # NAME есть, но article не назначается из штрих-кода
+    if result is not None:
+        _, mapping = result
+        assert mapping.get(SpecField.ARTICLE) is None
+
+
+def test_catalog_keeps_both_article_and_kod() -> None:
+    """Каталог 1С: «Артикул» → ARTICLE, «Код» → CODE_1C (оба сохраняются)."""
+    rows = [
+        ["Артикул", "Код", "Наименование", "Цена"],
+        ["BLT-1", "Ц0000000100", "Болт", 10],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.ARTICLE) == 0
+    assert mapping.get(SpecField.CODE_1C) == 1
