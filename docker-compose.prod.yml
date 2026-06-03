@@ -25,7 +25,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # bind-mount вместо named volume — защита от случайного docker volume
+      # prune / down -v (host-папку они не трогают). Миграция: 2026-06-03.
+      - /srv/fasttender/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
