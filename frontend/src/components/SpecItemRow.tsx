@@ -21,6 +21,9 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
 
   const verificationBadge = renderVerificationBadge(item);
   const topCatalog = item.candidates_catalog[0];
+  // «Выбранная позиция»: после подтверждения — реально выбранная (в т.ч.
+  // найденная поиском, не из топ-кандидатов); до выбора — топ-кандидат.
+  const chosen = item.verification?.chosen_item ?? null;
 
   return (
     <>
@@ -48,7 +51,16 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
           {item.quantity ?? "—"} {item.unit_raw ?? ""}
         </td>
         <td className="px-4 py-2">
-          {topCatalog ? (
+          {chosen ? (
+            <div className="text-sm">
+              <div className="line-clamp-1 font-medium text-emerald-700">
+                {chosen.name}
+              </div>
+              <div className="text-xs text-slate-500">
+                {chosen.article}
+              </div>
+            </div>
+          ) : topCatalog ? (
             <div className="text-sm">
               <div className="line-clamp-1">{topCatalog.name}</div>
               <div className="text-xs text-slate-500">

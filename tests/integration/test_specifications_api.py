@@ -14,12 +14,13 @@ import openpyxl
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from fasttender.core.celery_app import celery_app
 from fasttender.core.config import get_settings
 from fasttender.main import create_app
+from fasttender.models import DataSource, DataSourceType, Item
 from fasttender.services.importer import CatalogImporter, ImportMode
 from tests.fixtures.spec_builders import make_xlsx
 from tests.integration.conftest import TEST_DB_URL
@@ -193,6 +194,64 @@ async def test_full_http_flow_upload_then_get_status_then_get_items(
     assert top["match_type"] == "exact_article"
     assert top["rank"] == 1
     assert "human_readable" in top["explanation"]
+
+
+async def test_items_include_manually_chosen_item_not_in_candidates(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """Менеджер выбрал позицию через поиск (нет среди топ-кандидатов) →
+    в ответе verification.chosen_item = именно эта позиция, не топ-кандидат."""
+    await _seed_catalog(committed_db, tmp_path)
+
+    # Позиция, которой НЕТ среди кандидатов спеки
+    cat_source = await committed_db.scalar(
+        select(DataSource).where(DataSource.type == DataSourceType.COMPANY_CATALOG)
+    )
+    washer = Item(
+        source_id=cat_source.id,
+        article_raw="WSH-M10",
+        article_normalized="WSHM10",
+        name="Шайба М10 DIN125",
+        is_active=True,
+    )
+    committed_db.add(washer)
+    await committed_db.commit()
+    await committed_db.refresh(washer)
+
+    upload = await client.post(
+        "/api/v1/specifications/",
+        files={
+            "file": (
+                "spec.xlsx",
+                _make_spec_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+    )
+    spec_id = upload.json()["spec_id"]
+
+    items = (await client.get(f"/api/v1/specifications/{spec_id}/items")).json()["items"]
+    blt = next(i for i in items if i["name_raw"] == "Болт М10х40")
+    # топ-кандидат — Болт, не Шайба
+    assert blt["candidates_catalog"][0]["name"] != "Шайба М10 DIN125"
+
+    # менеджер подтверждает Шайбой (через «поиск»)
+    verify = await client.post(
+        f"/api/v1/specifications/{spec_id}/items/{blt['id']}/verify",
+        json={"decision": "confirmed", "chosen_item_id": str(washer.id)},
+    )
+    assert verify.status_code == 200
+
+    items2 = (await client.get(f"/api/v1/specifications/{spec_id}/items")).json()["items"]
+    blt2 = next(i for i in items2 if i["id"] == blt["id"])
+    v = blt2["verification"]
+    assert v["decision"] == "confirmed"
+    assert v["chosen_item"] is not None
+    assert v["chosen_item"]["item_id"] == str(washer.id)
+    assert v["chosen_item"]["name"] == "Шайба М10 DIN125"
+    assert v["chosen_item"]["source_type"] == "company_catalog"
 
 
 async def test_get_specification_404_for_unknown_id(

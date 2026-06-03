@@ -90,11 +90,27 @@ class CandidateRead(BaseModel):
     explanation: dict[str, Any]
 
 
+class ChosenItemRead(BaseModel):
+    """Снимок позиции, выбранной менеджером при подтверждении.
+
+    Нужен чтобы UI показал именно выбранную позицию (в т.ч. найденную через
+    поиск, а не из топ-кандидатов) в колонке «Выбранная позиция»."""
+
+    item_id: UUID
+    source_type: DataSourceType | None = None
+    article: str | None = None
+    name: str
+    manufacturer: str | None = None
+    price: Decimal | None = None
+    currency: str | None = None
+
+
 class VerificationRead(BaseModel):
     """Решение менеджера по строке."""
 
     decision: VerificationDecision
     chosen_item_id: UUID | None = None
+    chosen_item: ChosenItemRead | None = None
     decided_by: str | None = None
     notes: str | None = None
     decided_at: datetime

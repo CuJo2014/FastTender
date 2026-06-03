@@ -287,7 +287,7 @@ function DetailContent({ specId }: { specId: string }) {
                       { label: "№", width: "w-12" },
                       { label: "Исходная позиция" },
                       { label: "Кол-во", width: "w-28" },
-                      { label: "Топ кандидат каталога" },
+                      { label: "Выбранная позиция" },
                       { label: "Решение", width: "w-40" },
                       { label: "", width: "w-32" },
                     ].map((col, i) => (

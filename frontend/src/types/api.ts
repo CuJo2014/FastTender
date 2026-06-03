@@ -103,9 +103,20 @@ export interface CandidateRead {
   explanation: CandidateExplanation;
 }
 
+export interface ChosenItemRead {
+  item_id: string;
+  source_type: DataSourceType | null;
+  article: string | null;
+  name: string;
+  manufacturer: string | null;
+  price: string | null; // Decimal сериализуется в строку
+  currency: string | null;
+}
+
 export interface VerificationRead {
   decision: VerificationDecision;
   chosen_item_id: string | null;
+  chosen_item: ChosenItemRead | null;
   decided_by: string | null;
   notes: string | null;
   decided_at: string;

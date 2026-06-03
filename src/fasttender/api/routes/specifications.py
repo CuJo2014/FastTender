@@ -24,7 +24,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from fasttender.core.config import get_settings
 from fasttender.core.db import get_session
@@ -40,6 +40,7 @@ from fasttender.models import (
 )
 from fasttender.schemas.specification import (
     CandidateRead,
+    ChosenItemRead,
     LinkedCatalogItemRead,
     PaginatedSpecItems,
     SpecificationCounts,
@@ -226,6 +227,21 @@ async def get_specification_items(
         )
     ).all()
 
+    # Выбранные позиции (chosen_item) — в т.ч. найденные через поиск, которых
+    # нет среди топ-кандидатов. Один батч-запрос на страницу, чтобы UI показал
+    # именно выбранную позицию в колонке «Выбранная позиция».
+    chosen_ids = {
+        si.verification.chosen_item_id
+        for si in spec_items
+        if si.verification is not None and si.verification.chosen_item_id is not None
+    }
+    chosen_items: dict[UUID, Item] = {}
+    if chosen_ids:
+        chosen_rows = await session.scalars(
+            select(Item).where(Item.id.in_(chosen_ids)).options(joinedload(Item.source))
+        )
+        chosen_items = {it.id: it for it in chosen_rows}
+
     items_out: list[SpecItemRead] = []
     for spec_item in spec_items:
         catalog_candidates: list[CandidateRead] = []
@@ -264,9 +280,23 @@ async def get_specification_items(
         verification_read = None
         if spec_item.verification is not None:
             v = spec_item.verification
+            chosen_read: ChosenItemRead | None = None
+            if v.chosen_item_id is not None:
+                ci = chosen_items.get(v.chosen_item_id)
+                if ci is not None:
+                    chosen_read = ChosenItemRead(
+                        item_id=ci.id,
+                        source_type=ci.source.type if ci.source else None,
+                        article=ci.article_raw,
+                        name=ci.name,
+                        manufacturer=ci.manufacturer,
+                        price=ci.price,
+                        currency=ci.currency,
+                    )
             verification_read = VerificationRead(
                 decision=v.decision,
                 chosen_item_id=v.chosen_item_id,
+                chosen_item=chosen_read,
                 decided_by=v.decided_by,
                 notes=v.notes,
                 decided_at=v.updated_at,
