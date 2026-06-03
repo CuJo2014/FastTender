@@ -307,6 +307,9 @@ function DetailContent({ specId }: { specId: string }) {
                       key={item.id}
                       item={item}
                       pending={verifyMutation.isPending}
+                      // Строка «прилипает» под шапкой таблицы (nav 56 + шапка
+                      // спеки + высота thead ~41) при разворачивании.
+                      stickyTop={stickyHeaderHeight + 56 + 41}
                       onVerify={(specItemId, decision, chosenItemId) =>
                         verifyMutation.mutate({
                           specItemId,

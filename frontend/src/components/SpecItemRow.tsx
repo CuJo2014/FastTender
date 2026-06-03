@@ -14,9 +14,17 @@ interface Props {
   ) => void;
   pending: boolean;
   defaultExpanded?: boolean;
+  /** px-смещение для «прилипания» строки при разворачивании (под шапкой). */
+  stickyTop?: number;
 }
 
-export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }: Props) {
+export function SpecItemRow({
+  item,
+  onVerify,
+  pending,
+  defaultExpanded = false,
+  stickyTop = 0,
+}: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const verificationBadge = renderVerificationBadge(item);
@@ -24,6 +32,14 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
   // «Выбранная позиция»: после подтверждения — реально выбранная (в т.ч.
   // найденная поиском, не из топ-кандидатов); до выбора — топ-кандидат.
   const chosen = item.verification?.chosen_item ?? null;
+
+  // При разворачивании строка товара «прилипает» под шапкой — видно, что
+  // подбираем, пока листаешь кандидатов/результаты поиска.
+  const td = "px-4 py-2";
+  const tdSticky = expanded
+    ? " sticky z-10 bg-blue-50 border-b border-blue-200"
+    : "";
+  const stickyStyle = expanded ? { top: stickyTop } : undefined;
 
   return (
     <>
@@ -33,10 +49,13 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
           (item.verification ? "bg-slate-50/40" : "")
         }
       >
-        <td className="px-4 py-2 tabular-nums text-slate-500">
+        <td
+          className={`${td} tabular-nums text-slate-500${tdSticky}`}
+          style={stickyStyle}
+        >
           {item.line_number}
         </td>
-        <td className="px-4 py-2">
+        <td className={`${td}${tdSticky}`} style={stickyStyle}>
           <div className="font-medium">{item.name_raw}</div>
           <div className="mt-0.5 text-xs text-slate-500">
             {item.article_raw && (
@@ -47,10 +66,13 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
             )}
           </div>
         </td>
-        <td className="px-4 py-2 tabular-nums text-slate-600">
+        <td
+          className={`${td} tabular-nums text-slate-600${tdSticky}`}
+          style={stickyStyle}
+        >
           {item.quantity ?? "—"} {item.unit_raw ?? ""}
         </td>
-        <td className="px-4 py-2">
+        <td className={`${td}${tdSticky}`} style={stickyStyle}>
           {chosen ? (
             <div className="text-sm">
               <div className="line-clamp-1 font-medium text-emerald-700">
@@ -71,8 +93,10 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
             <span className="text-sm text-slate-400">Нет совпадений</span>
           )}
         </td>
-        <td className="px-4 py-2">{verificationBadge}</td>
-        <td className="px-4 py-2 text-right">
+        <td className={`${td}${tdSticky}`} style={stickyStyle}>
+          {verificationBadge}
+        </td>
+        <td className={`${td} text-right${tdSticky}`} style={stickyStyle}>
           <Button
             variant="ghost"
             size="sm"
@@ -87,25 +111,8 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
         <tr>
           <td colSpan={6} className="bg-slate-50 px-4 py-4">
             <div className="space-y-3">
-              {/* Контекст: что подбираем — всегда виден при скролле */}
-              <div className="text-sm text-slate-700">
-                <span className="text-xs uppercase text-slate-400">
-                  Подбираем:{" "}
-                </span>
-                <span className="font-medium">{item.name_raw}</span>
-                {item.article_raw && (
-                  <span className="ml-2 font-mono text-xs text-slate-500">
-                    {item.article_raw}
-                  </span>
-                )}
-                {item.quantity != null && (
-                  <span className="ml-2 text-slate-500">
-                    · {item.quantity} {item.unit_raw ?? ""}
-                  </span>
-                )}
-              </div>
-
-              {/* Поиск — наверху, предзаполнен именем позиции */}
+              {/* Поиск — наверху, предзаполнен именем позиции. Контекст
+                  (что подбираем) виден в «прилипшей» строке товара выше. */}
               <CatalogSearchBox
                 initialQuery={item.name_raw}
                 onPick={(itemId) => onVerify(item.id, "confirmed", itemId)}
