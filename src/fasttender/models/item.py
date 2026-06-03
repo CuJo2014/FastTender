@@ -56,6 +56,13 @@ class Item(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     price: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+
+    # Все цены позиции из прайса: несколько цен на позицию (пары с/без НДС,
+    # уровни закупка/РРЦ/МИЦ, акция, «с ТЗР»). `price` выше — основная
+    # (preferred). Элемент: {amount, vat: net|gross|unknown, tier, label}.
+    # См. ParsedItem.prices / detect_price_columns / миграция 0010.
+    prices: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
