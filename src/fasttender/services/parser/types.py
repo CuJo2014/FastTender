@@ -35,6 +35,30 @@ class SpecField(StrEnum):
     NOTES = "notes"
 
 
+class VatBasis(StrEnum):
+    """База НДС ценовой колонки."""
+
+    NET = "net"  # без НДС
+    GROSS = "gross"  # с НДС
+    UNKNOWN = "unknown"
+
+
+class PriceEntry(BaseModel):
+    """Одна цена позиции из прайса (раздел «несколько цен на позицию»).
+
+    В прайсах на позицию приходится несколько цен: пары «с НДС»/«без НДС»,
+    уровни (закупка/РРЦ/МИЦ), акция, «с ТЗР». Храним все как есть; какая —
+    основная (проецируется в Item.price) решает выбор preferred.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    amount: Decimal
+    vat: VatBasis = VatBasis.UNKNOWN
+    tier: str | None = None  # уровень: «Цены с вашей скидкой» / «РРЦ» / «МИЦ»
+    label: str | None = None  # сырой заголовок колонки — для UI/аудита
+
+
 class ColumnMapping(BaseModel):
     """Маппинг «логическое поле → индекс колонки (0-based) в исходном файле».
 
@@ -75,10 +99,15 @@ class ParsedItem(BaseModel):
     category: str | None = None  # путь иерархии «Крепёж / Болты / DIN933»
     quantity: Decimal | None = None
     unit: str | None = None
-    price: Decimal | None = None
+    price: Decimal | None = None  # основная цена (preferred из prices, либо одиночная)
     currency: str | None = None
     delivery_term: str | None = None
     notes: str | None = None
+
+    # Все ценовые колонки строки (несколько цен на позицию). Может быть пустым
+    # (override-маппинг с нераспознаваемыми заголовками — тогда price берётся
+    # из mapped-колонки PRICE напрямую).
+    prices: list[PriceEntry] = Field(default_factory=list)
 
     # Оригинал строки целиком — для аудита (раздел 4.2)
     raw_row: dict[str, Any] = Field(default_factory=dict)

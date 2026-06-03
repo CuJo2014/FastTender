@@ -8,12 +8,18 @@ from collections.abc import Sequence
 from typing import Any
 
 from fasttender.services.parser.header_detector import detect_header
+from fasttender.services.parser.price_columns import (
+    PriceColumn,
+    detect_price_columns,
+    select_preferred,
+)
 from fasttender.services.parser.types import (
     ColumnMapping,
     ParsedItem,
     ParseError,
     ParseResult,
     ParseWarning,
+    PriceEntry,
     SpecField,
 )
 from fasttender.services.parser.value_normalizer import clean_string, parse_decimal
@@ -53,7 +59,11 @@ def build_result(
             )
         header_row, mapping = detected
 
-    items, warnings = _extract_items(matrix, header_row + 1, mapping)
+    # Все ценовые колонки шапки (несколько цен на позицию). Не зависит от
+    # field-mapping — детектится по заголовкам реальной строки шапки.
+    price_columns = detect_price_columns(matrix, header_row)
+
+    items, warnings = _extract_items(matrix, header_row + 1, mapping, price_columns)
 
     return ParseResult(
         items=items,
@@ -70,6 +80,7 @@ def _extract_items(
     matrix: Sequence[Sequence[Any]],
     start_row: int,
     mapping: ColumnMapping,
+    price_columns: Sequence[PriceColumn] | None = None,
 ) -> tuple[list[ParsedItem], list[ParseWarning]]:
     items: list[ParsedItem] = []
     warnings: list[ParseWarning] = []
@@ -111,17 +122,26 @@ def _extract_items(
                 )
             )
 
-        price_raw = _cell(row, mapping.get(SpecField.PRICE))
-        price = parse_decimal(price_raw)
-        if price_raw is not None and price is None:
-            warnings.append(
-                ParseWarning(
-                    line_number=line_number,
-                    field=SpecField.PRICE,
-                    message="Не удалось распознать цену как число",
-                    raw_value=str(price_raw),
+        # Несколько цен на позицию: вытягиваем все распознанные ценовые
+        # колонки. Основная (price) — preferred из них (net>gross>unknown).
+        prices = _extract_prices(row, price_columns)
+        if prices:
+            preferred = select_preferred(prices)
+            price = preferred.amount if preferred is not None else None
+        else:
+            # Fallback: ценовых колонок не распознано (например, override-
+            # маппинг с нечитаемыми заголовками) — берём mapped PRICE напрямую.
+            price_raw = _cell(row, mapping.get(SpecField.PRICE))
+            price = parse_decimal(price_raw)
+            if price_raw is not None and price is None:
+                warnings.append(
+                    ParseWarning(
+                        line_number=line_number,
+                        field=SpecField.PRICE,
+                        message="Не удалось распознать цену как число",
+                        raw_value=str(price_raw),
+                    )
                 )
-            )
 
         raw_row = {
             f"col_{idx}": str(value) if value is not None else None for idx, value in enumerate(row)
@@ -141,11 +161,28 @@ def _extract_items(
                 currency=currency,
                 delivery_term=delivery_term,
                 notes=notes,
+                prices=prices,
                 raw_row=raw_row,
             )
         )
 
     return items, warnings
+
+
+def _extract_prices(
+    row: Sequence[Any], price_columns: Sequence[PriceColumn] | None
+) -> list[PriceEntry]:
+    """Строит список цен строки по схеме ценовых колонок. Пустые/нечисловые
+    ячейки пропускаются — позиция может иметь не все цены заполненными."""
+    if not price_columns:
+        return []
+    out: list[PriceEntry] = []
+    for pc in price_columns:
+        amount = parse_decimal(_cell(row, pc.col_index))
+        if amount is None:
+            continue
+        out.append(PriceEntry(amount=amount, vat=pc.vat, tier=pc.tier, label=pc.label))
+    return out
 
 
 def _cell(row: Sequence[Any], col_idx: int | None) -> Any:

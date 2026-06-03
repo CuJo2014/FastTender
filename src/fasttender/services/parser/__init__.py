@@ -27,7 +27,9 @@ from fasttender.services.parser.types import (
     ParseError,
     ParseResult,
     ParseWarning,
+    PriceEntry,
     SpecField,
+    VatBasis,
 )
 
 __all__ = [
@@ -36,8 +38,10 @@ __all__ = [
     "ParseResult",
     "ParseWarning",
     "ParsedItem",
+    "PriceEntry",
     "SpecField",
     "SpecificationParser",
+    "VatBasis",
 ]
 
 _EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}

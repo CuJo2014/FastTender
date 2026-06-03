@@ -23,16 +23,12 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Any
 
+from fasttender.services.parser.types import PriceEntry, VatBasis
 from fasttender.services.parser.value_normalizer import clean_string
 
-
-class VatBasis(StrEnum):
-    NET = "net"  # без НДС
-    GROSS = "gross"  # с НДС
-    UNKNOWN = "unknown"
+__all__ = ["PriceColumn", "VatBasis", "detect_price_columns", "select_preferred"]
 
 
 @dataclass(frozen=True)
@@ -172,3 +168,29 @@ def detect_price_columns(
     if len(distinct) < 2:
         result = [PriceColumn(c.col_index, c.label, c.vat, None) for c in result]
     return result
+
+
+# Приоритет базы НДС при выборе основной цены. Канон сравнения — НЕТТО
+# (без НДС), поэтому net > gross. Подтверждено per-supplier (2026-06-02):
+# default-правило воспроизводит все выборы заказчика (TEL→скидка-net,
+# MKT→без НДС, SMT→единственный gross). Tie-break — порядок колонок
+# (раньше = предпочтительнее: у TEL первый уровень «Цены с вашей скидкой»).
+_VAT_PREFERENCE: dict[VatBasis, int] = {
+    VatBasis.NET: 0,
+    VatBasis.GROSS: 1,
+    VatBasis.UNKNOWN: 2,
+}
+
+
+def select_preferred(prices: Sequence[PriceEntry]) -> PriceEntry | None:
+    """Выбирает основную цену (проецируется в Item.price).
+
+    Правило: net > gross > unknown; при равенстве — первая по порядку колонок.
+    Per-supplier override (другой уровень/база) — задача уровня импортёра, не здесь.
+    """
+    if not prices:
+        return None
+    return min(
+        enumerate(prices),
+        key=lambda iv: (_VAT_PREFERENCE.get(iv[1].vat, 99), iv[0]),
+    )[1]
