@@ -43,7 +43,7 @@ class SupplierTransformations(BaseModel):
         ),
     )
     vat_included: bool = Field(False, description="Цена в файле уже включает НДС → убрать.")
-    vat_rate: int = Field(20, ge=0, le=100, description="Ставка НДС в процентах.")
+    vat_rate: int = Field(22, ge=0, le=100, description="Ставка НДС в процентах (РФ с 2026 — 22%).")
     default_unit: str | None = Field(
         None, description="Подставить в Ед.изм. если пусто (например, «шт»)."
     )
