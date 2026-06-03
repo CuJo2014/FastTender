@@ -87,6 +87,31 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
         <tr>
           <td colSpan={6} className="bg-slate-50 px-4 py-4">
             <div className="space-y-3">
+              {/* Контекст: что подбираем — всегда виден при скролле */}
+              <div className="text-sm text-slate-700">
+                <span className="text-xs uppercase text-slate-400">
+                  Подбираем:{" "}
+                </span>
+                <span className="font-medium">{item.name_raw}</span>
+                {item.article_raw && (
+                  <span className="ml-2 font-mono text-xs text-slate-500">
+                    {item.article_raw}
+                  </span>
+                )}
+                {item.quantity != null && (
+                  <span className="ml-2 text-slate-500">
+                    · {item.quantity} {item.unit_raw ?? ""}
+                  </span>
+                )}
+              </div>
+
+              {/* Поиск — наверху, предзаполнен именем позиции */}
+              <CatalogSearchBox
+                initialQuery={item.name_raw}
+                onPick={(itemId) => onVerify(item.id, "confirmed", itemId)}
+                disabled={pending}
+              />
+
               <CandidatesTable
                 title="Из каталога компании"
                 candidates={item.candidates_catalog}
@@ -99,11 +124,6 @@ export function SpecItemRow({ item, onVerify, pending, defaultExpanded = false }
                 candidates={item.candidates_suppliers}
                 selectedItemId={item.verification?.chosen_item_id ?? null}
                 onConfirm={(itemId) => onVerify(item.id, "confirmed", itemId)}
-                disabled={pending}
-              />
-
-              <CatalogSearchBox
-                onPick={(itemId) => onVerify(item.id, "confirmed", itemId)}
                 disabled={pending}
               />
 

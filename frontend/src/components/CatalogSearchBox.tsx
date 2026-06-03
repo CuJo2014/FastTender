@@ -7,10 +7,12 @@ import { Button } from "./ui/Button";
 interface Props {
   onPick: (itemId: string) => void;
   disabled?: boolean;
+  initialQuery?: string;
 }
 
-export function CatalogSearchBox({ onPick, disabled }: Props) {
-  const [query, setQuery] = useState("");
+export function CatalogSearchBox({ onPick, disabled, initialQuery }: Props) {
+  // Предзаполняем именем позиции — видно, что ищем, и поиск в один клик.
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<CatalogSearchResult[]>([]);
 
   const mutation = useMutation({
