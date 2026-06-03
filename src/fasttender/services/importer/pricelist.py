@@ -35,6 +35,7 @@ from fasttender.services.parser import (
 )
 
 CONFIG_KEY_MAPPING = "column_mapping"
+CONFIG_KEY_HEADER_ROW = "header_row"
 
 
 class PriceListImporter:
@@ -65,6 +66,7 @@ class PriceListImporter:
         mode: ImportMode = ImportMode.REPLACE,
         sheet_name: str | None = None,
         mapping_override: ColumnMapping | None = None,
+        header_row_override: int | None = None,
     ) -> ImportReport:
         supplier = await session.get(Supplier, supplier_id)
         if supplier is None:
@@ -74,7 +76,21 @@ class PriceListImporter:
             )
 
         source = await self._get_or_create_pricelist_source(session, supplier)
-        effective_mapping = mapping_override or self._mapping_from_config(source.config)
+        # Маппинг и строку шапки берём из явного override либо из выученного
+        # config. header_row критичен для прайсов где шапка не на первой строке
+        # (TEL — row4, MIL — row9): иначе ре-импорт по сохранённому маппингу
+        # читает не ту строку и теряет цены (и данные).
+        effective_mapping: ColumnMapping | None
+        if mapping_override is not None:
+            effective_mapping = mapping_override
+            effective_header_row = header_row_override
+        else:
+            effective_mapping = self._mapping_from_config(source.config)
+            effective_header_row = (
+                self._header_row_from_config(source.config)
+                if effective_mapping is not None
+                else None
+            )
 
         try:
             # У поставщиков НЕ бывает Кода 1С — это внутренний идентификатор
@@ -85,6 +101,7 @@ class PriceListImporter:
                 path,
                 sheet_name=sheet_name,
                 mapping_override=effective_mapping,
+                header_row_override=effective_header_row,
                 exclude_fields=frozenset({SpecField.CODE_1C}),
             )
         except ParseError as exc:
@@ -94,8 +111,11 @@ class PriceListImporter:
             ) from exc
 
         # Если шаблона не было — учим: сохраняем автодетектированный маппинг
+        # вместе со строкой шапки (нужна для ре-импорта, см. выше).
         if effective_mapping is None:
-            self._save_mapping_to_config(source, parse_result.column_mapping)
+            self._save_mapping_to_config(
+                source, parse_result.column_mapping, parse_result.header_row
+            )
 
         # Применяем конфигурируемые трансформации поставщика (бренд из
         # имени, НДС, дефолты) — до dedupe/upsert
@@ -174,8 +194,19 @@ class PriceListImporter:
         return mapping if mapping.is_usable else None
 
     @staticmethod
-    def _save_mapping_to_config(source: DataSource, mapping: ColumnMapping) -> None:
-        """Сохраняет автодетектированный маппинг в config для следующих загрузок.
+    def _header_row_from_config(config: dict) -> int | None:
+        """Достаёт сохранённую строку шапки (0-based) из source.config."""
+        raw = config.get(CONFIG_KEY_HEADER_ROW)
+        if isinstance(raw, int) and raw >= 0:
+            return raw
+        return None
+
+    @staticmethod
+    def _save_mapping_to_config(
+        source: DataSource, mapping: ColumnMapping, header_row: int | None
+    ) -> None:
+        """Сохраняет автодетектированный маппинг + строку шапки для следующих
+        загрузок.
 
         SQLAlchemy не отслеживает мутации dict внутри JSONB по умолчанию,
         поэтому пересоздаём весь config.
@@ -184,4 +215,6 @@ class PriceListImporter:
         new_config[CONFIG_KEY_MAPPING] = {
             field.value: col_idx for field, col_idx in mapping.columns.items()
         }
+        if header_row is not None:
+            new_config[CONFIG_KEY_HEADER_ROW] = header_row
         source.config = new_config

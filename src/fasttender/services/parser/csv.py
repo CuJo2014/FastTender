@@ -22,6 +22,7 @@ def parse_csv(
     path: Path,
     *,
     mapping_override: ColumnMapping | None = None,
+    header_row_override: int | None = None,
     encoding_override: str | None = None,
     delimiter_override: str | None = None,
     exclude_fields: frozenset[SpecField] | None = None,
@@ -69,6 +70,7 @@ def parse_csv(
         encoding=encoding,
         delimiter=delimiter,
         mapping_override=mapping_override,
+        header_row_override=header_row_override,
         exclude_fields=exclude_fields,
     )
 

@@ -32,14 +32,21 @@ def build_result(
     encoding: str | None = None,
     delimiter: str | None = None,
     mapping_override: ColumnMapping | None = None,
+    header_row_override: int | None = None,
     exclude_fields: frozenset[SpecField] | None = None,
 ) -> ParseResult:
-    """Превращает плоскую матрицу в ParseResult: автоопределение шапки + извлечение строк."""
+    """Превращает плоскую матрицу в ParseResult: автоопределение шапки + извлечение строк.
+
+    header_row_override: индекс строки шапки при использовании mapping_override.
+    Нужен для прайсов где шапка НЕ на первой строке (TEL — row4, MIL — row9):
+    при ре-импорте сохранённый маппинг применяется к правильной строке, а не к 0.
+    Без override (автодетект) — игнорируется.
+    """
     if not matrix:
         raise ParseError("Файл пуст", details={"sheet": sheet_name})
 
     if mapping_override is not None and mapping_override.is_usable:
-        header_row = 0
+        header_row = header_row_override if header_row_override is not None else 0
         mapping = mapping_override
         # Если override содержит поле из exclude_fields — убираем (например,
         # старый кэш source.config с code_1c для прайса поставщика)

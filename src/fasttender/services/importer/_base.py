@@ -357,6 +357,23 @@ def validate_and_dedupe(items: list[ParsedItem], report: ImportReport) -> list[P
     return valid
 
 
+def prices_to_jsonb(parsed: ParsedItem) -> list[dict]:
+    """Сериализация ParsedItem.prices → JSONB-массив для Item.prices.
+
+    amount хранится строкой — JSONB не имеет Decimal, а float терял бы
+    точность (цены вроде 22614.7500). При чтении парсим обратно Decimal(str).
+    """
+    return [
+        {
+            "amount": str(p.amount),
+            "vat": p.vat.value,
+            "tier": p.tier,
+            "label": p.label,
+        }
+        for p in parsed.prices
+    ]
+
+
 def build_orm_item(source_id: UUID, parsed: ParsedItem, *, supplier_sku: str | None = None) -> Item:
     """Маппинг ParsedItem → ORM Item.
 
@@ -382,6 +399,7 @@ def build_orm_item(source_id: UUID, parsed: ParsedItem, *, supplier_sku: str | N
         category_path=parsed.category,
         price=parsed.price,
         currency=parsed.currency,
+        prices=prices_to_jsonb(parsed),
         unit=parsed.unit,
         in_stock=True,
         attributes={},
@@ -487,6 +505,7 @@ async def upsert_items(
             target.category_path = item.category
             target.price = item.price
             target.currency = item.currency
+            target.prices = prices_to_jsonb(item)
             target.unit = item.unit
             target.is_active = True  # re-активация если была deactivated
             # Backfill SKU для позиций, импортированных до появления feature

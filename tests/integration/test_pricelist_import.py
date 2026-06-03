@@ -19,7 +19,10 @@ from fasttender.services.importer import (
     ImportMode,
     PriceListImporter,
 )
-from fasttender.services.importer.pricelist import CONFIG_KEY_MAPPING
+from fasttender.services.importer.pricelist import (
+    CONFIG_KEY_HEADER_ROW,
+    CONFIG_KEY_MAPPING,
+)
 from fasttender.services.parser import ColumnMapping, SpecField
 from tests.fixtures.spec_builders import make_xlsx
 
@@ -416,3 +419,74 @@ async def test_replace_reimport_keeps_match_candidate_valid(
 
     # 3. supplier_sku стабилен
     assert linked.supplier_sku == original_sku
+
+
+async def test_import_persists_multiple_prices(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Пара «с НДС»/«без НДС» сохраняется в Item.prices; item.price = net."""
+    supplier = await _make_supplier(session, "МИЛ")
+    path = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена с НДС, руб.", "Цена без НДС, руб."],
+            ["A-1", "Дрель", 27590, 22614.75],
+        ],
+    )
+    await importer.import_file(session, supplier_id=supplier.id, path=path, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    item = await session.scalar(select(Item).where(Item.article_normalized == "A1"))
+    assert {p["vat"] for p in item.prices} == {"net", "gross"}
+    amounts = {p["vat"]: Decimal(p["amount"]) for p in item.prices}
+    assert amounts["gross"] == Decimal("27590")
+    assert amounts["net"] == Decimal("22614.75")
+    # основная цена — net (канон сравнения без НДС)
+    assert item.price == Decimal("22614.75")
+
+
+async def test_reimport_with_header_not_on_first_row_keeps_prices(
+    session: AsyncSession,
+    importer: PriceListImporter,
+    tmp_path: Path,
+) -> None:
+    """Прайс с шапкой НЕ на первой строке (как TEL): первый импорт учит
+    header_row, ре-импорт по сохранённому config читает ту же строку и
+    сохраняет цены (регрессия latent-бага header_row=0 при override)."""
+    supplier = await _make_supplier(session, "ТЕХ")
+    rows = [
+        ["Прайс-лист", None, None, None],  # row0 — мусор
+        ["от 2026-06-03", None, None, None],  # row1 — мусор
+        ["Артикул", "Наименование", "Цена с НДС", "Цена без НДС"],  # row2 — шапка
+        ["A-1", "Наконечник", 8.85, 7.26],
+        ["A-2", "Гильза", 15.27, 12.52],
+    ]
+    path = make_xlsx(tmp_path / "v1.xlsx", rows=rows)
+
+    # Первый импорт — автодетект шапки (row2), учим маппинг + header_row
+    await importer.import_file(session, supplier_id=supplier.id, path=path, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    source = await session.scalar(
+        select(DataSource).where(DataSource.supplier_id == supplier.id)
+    )
+    assert source.config.get(CONFIG_KEY_HEADER_ROW) == 2
+    assert CONFIG_KEY_MAPPING in source.config
+
+    item1 = await session.scalar(select(Item).where(Item.article_normalized == "A1"))
+    assert len(item1.prices) == 2
+    assert item1.price == Decimal("7.26")  # net preferred
+
+    # Ре-импорт того же файла — теперь по сохранённому config (override-путь).
+    # Без сохранённого header_row парсер читал бы row0 («Прайс-лист») как шапку.
+    path2 = make_xlsx(tmp_path / "v2.xlsx", rows=rows)
+    await importer.import_file(session, supplier_id=supplier.id, path=path2, mode=ImportMode.REPLACE)
+    await session.commit()
+
+    items = (await session.scalars(select(Item).where(Item.is_active))).all()
+    assert len(items) == 2  # ровно A-1, A-2 — не мусорные строки
+    a1 = next(i for i in items if i.article_normalized == "A1")
+    assert len(a1.prices) == 2  # цены не потеряны на ре-импорте
+    assert a1.price == Decimal("7.26")

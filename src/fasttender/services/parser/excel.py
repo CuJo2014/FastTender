@@ -22,6 +22,7 @@ def parse_excel(
     *,
     sheet_name: str | None = None,
     mapping_override: ColumnMapping | None = None,
+    header_row_override: int | None = None,
     exclude_fields: frozenset[SpecField] | None = None,
 ) -> ParseResult:
     """Парсит Excel-файл (.xlsx/.xlsm/.xls) и возвращает ParseResult."""
@@ -37,6 +38,7 @@ def parse_excel(
         matrix,
         sheet_name=title,
         mapping_override=mapping_override,
+        header_row_override=header_row_override,
         exclude_fields=exclude_fields,
     )
 
