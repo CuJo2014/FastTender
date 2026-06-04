@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
@@ -26,20 +26,24 @@ function DetailContent({ specId }: { specId: string }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
-  // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы
-  // могла приклеиться ровно ниже неё (без перекрытия).
-  // getBoundingClientRect().height включает padding/border — это и есть
-  // визуальная высота которую thead должен «обойти».
-  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+  // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы и
+  // развёрнутая строка товара приклеивались ровно ниже неё (без перекрытия).
+  // Через callback-ref — замер происходит в момент РЕАЛЬНОГО монтирования
+  // шапки. Иначе при первом заходе в спеку (данные ещё грузятся, шапки нет
+  // в DOM) высота оставалась 0, и sticky-строка пряталась за спец-шапкой —
+  // «фиксация работала в одной спеке и не работала в другой».
   const [stickyHeaderHeight, setStickyHeaderHeight] = useState(0);
-  useEffect(() => {
-    if (!stickyHeaderRef.current) return;
-    const el = stickyHeaderRef.current;
-    const measure = () => setStickyHeaderHeight(el.getBoundingClientRect().height);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const setStickyHeaderEl = useCallback((node: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!node) return;
+    const measure = () =>
+      setStickyHeaderHeight(node.getBoundingClientRect().height);
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    ro.observe(node);
+    roRef.current = ro;
   }, []);
 
   const specQuery = useQuery({
@@ -129,7 +133,7 @@ function DetailContent({ specId }: { specId: string }) {
 
   return (
     <div className="space-y-6">
-      <div ref={stickyHeaderRef} className="sticky top-14 z-20 bg-slate-50 pb-2">
+      <div ref={setStickyHeaderEl} className="sticky top-14 z-20 bg-slate-50 pb-2">
       <Card>
         <CardHeader
           title={spec.source_filename}
