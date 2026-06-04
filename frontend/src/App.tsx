@@ -6,6 +6,7 @@ import { SpecificationDetailPage } from "./pages/SpecificationDetailPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
 import { ClientsPage } from "./pages/ClientsPage";
+import { TradingPlatformsPage } from "./pages/TradingPlatformsPage";
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/clients" element={<ClientsPage />} />
+        <Route path="/trading-platforms" element={<TradingPlatformsPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

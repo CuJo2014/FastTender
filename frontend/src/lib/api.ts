@@ -7,6 +7,8 @@ import type {
   CatalogInfo,
   ClientCreate,
   ClientRead,
+  TradingPlatformCreate,
+  TradingPlatformRead,
   CatalogSearchResult,
   ImportMode,
   ImportReport,
@@ -136,7 +138,8 @@ export const api = {
     patch: {
       client_id?: string | null;
       client_name?: string | null;
-      trading_platform?: string | null;
+      is_tp?: boolean;
+      trading_platform_id?: string | null;
       spec_number?: string | null;
       spec_date?: string | null;
       delivery_date?: string | null;
@@ -165,6 +168,28 @@ export const api = {
 
   deleteClient: (id: string) =>
     request<void>(`/clients/${id}`, { method: "DELETE" }),
+
+  // --- Trading platforms ---
+
+  listPlatforms: (q?: string) =>
+    request<TradingPlatformRead[]>(
+      `/trading-platforms/${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
+
+  createPlatform: (payload: TradingPlatformCreate) =>
+    request<TradingPlatformRead>("/trading-platforms/", {
+      method: "POST",
+      json: payload,
+    }),
+
+  updatePlatform: (id: string, payload: Partial<TradingPlatformCreate>) =>
+    request<TradingPlatformRead>(`/trading-platforms/${id}`, {
+      method: "PATCH",
+      json: payload,
+    }),
+
+  deletePlatform: (id: string) =>
+    request<void>(`/trading-platforms/${id}`, { method: "DELETE" }),
 
   // --- Catalog ---
 

@@ -15,6 +15,7 @@ from fasttender.models.match_candidate import MatchCandidate
 from fasttender.models.spec_item import SpecItem
 from fasttender.models.specification import Specification
 from fasttender.models.supplier import Supplier
+from fasttender.models.trading_platform import TradingPlatform
 from fasttender.models.verification import Verification
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "Specification",
     "SpecificationStatus",
     "Supplier",
+    "TradingPlatform",
     "Verification",
     "VerificationDecision",
 ]

@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -15,6 +15,7 @@ from fasttender.models.enums import SpecificationStatus
 if TYPE_CHECKING:
     from fasttender.models.client import Client
     from fasttender.models.spec_item import SpecItem
+    from fasttender.models.trading_platform import TradingPlatform
 
 
 class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -33,10 +34,20 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     # Реквизиты спецификации/тендера (миграция 0012).
+    # trading_platform (строка) — денорм-имя выбранной площадки (для экспорта).
     trading_platform: Mapped[str | None] = mapped_column(String(255), nullable=True)
     spec_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     spec_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Спецификация торговой площадки (миграция 0013): флаг + ссылка на справочник.
+    is_tp: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    trading_platform_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey("trading_platform.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     status: Mapped[SpecificationStatus] = mapped_column(
         Enum(
@@ -61,6 +72,10 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         order_by="SpecItem.line_number",
     )
     client: Mapped["Client | None"] = relationship(
+        back_populates="specifications",
+        lazy="joined",
+    )
+    trading_platform_ref: Mapped["TradingPlatform | None"] = relationship(
         back_populates="specifications",
         lazy="joined",
     )

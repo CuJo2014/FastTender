@@ -36,8 +36,10 @@ class SpecificationRead(BaseModel):
     source_filename: str
     client_name: str | None
     client_id: UUID | None = None
-    # Реквизиты тендера (миграция 0012)
+    # Реквизиты тендера (миграции 0012/0013)
     trading_platform: str | None = None
+    is_tp: bool = False
+    trading_platform_id: UUID | None = None
     spec_number: str | None = None
     spec_date: date | None = None
     delivery_date: date | None = None
@@ -65,7 +67,8 @@ class SpecificationUpdate(BaseModel):
 
     client_id: UUID | None = None
     client_name: str | None = Field(None, max_length=255)
-    trading_platform: str | None = Field(None, max_length=255)
+    is_tp: bool | None = None
+    trading_platform_id: UUID | None = None
     spec_number: str | None = Field(None, max_length=128)
     spec_date: date | None = None
     delivery_date: date | None = None

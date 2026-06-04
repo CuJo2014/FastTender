@@ -175,6 +175,8 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           </div>
 
+          <TradingPlatformControl specId={specId} spec={spec} />
+
           {spec.error_message && (
             <div className="flex-1 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
               {spec.error_message}
@@ -495,6 +497,84 @@ function ClientPicker({
   );
 }
 
+function TradingPlatformControl({
+  specId,
+  spec,
+}: {
+  specId: string;
+  spec: SpecificationRead;
+}) {
+  const qc = useQueryClient();
+  const { data: platforms } = useQuery({
+    queryKey: ["trading-platforms"],
+    queryFn: () => api.listPlatforms(),
+  });
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ["specifications", specId] });
+
+  const setFlag = useMutation({
+    mutationFn: (checked: boolean) =>
+      api.updateSpecification(specId, { is_tp: checked }),
+    onSuccess: invalidate,
+  });
+  const assign = useMutation({
+    mutationFn: (pid: string | null) =>
+      api.updateSpecification(specId, { trading_platform_id: pid }),
+    onSuccess: invalidate,
+  });
+  const createAndAssign = useMutation({
+    mutationFn: (name: string) => api.createPlatform({ name }),
+    onSuccess: (p) => {
+      qc.invalidateQueries({ queryKey: ["trading-platforms"] });
+      assign.mutate(p.id);
+    },
+  });
+
+  const onSelect = (v: string) => {
+    if (v === "__new__") {
+      const name = window.prompt("Название новой площадки:")?.trim();
+      if (name) createAndAssign.mutate(name);
+      return;
+    }
+    assign.mutate(v || null);
+  };
+
+  const busy =
+    setFlag.isPending || assign.isPending || createAndAssign.isPending;
+
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-xs uppercase text-slate-500">
+        <input
+          type="checkbox"
+          checked={spec.is_tp}
+          disabled={busy}
+          onChange={(e) => setFlag.mutate(e.target.checked)}
+        />
+        Спецификация ТП
+      </label>
+      {spec.is_tp && (
+        <div className="mt-1">
+          <select
+            value={spec.trading_platform_id ?? ""}
+            disabled={busy}
+            onChange={(e) => onSelect(e.target.value)}
+            className="rounded border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
+          >
+            <option value="">— площадка не выбрана —</option>
+            {(platforms ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            <option value="__new__">+ Создать новую…</option>
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RequisitesEditor({
   specId,
   spec,
@@ -504,7 +584,6 @@ function RequisitesEditor({
 }) {
   const qc = useQueryClient();
   const [form, setForm] = useState({
-    trading_platform: spec.trading_platform ?? "",
     spec_number: spec.spec_number ?? "",
     spec_date: spec.spec_date ?? "",
     delivery_date: spec.delivery_date ?? "",
@@ -513,7 +592,6 @@ function RequisitesEditor({
   const save = useMutation({
     mutationFn: () =>
       api.updateSpecification(specId, {
-        trading_platform: form.trading_platform.trim() || null,
         spec_number: form.spec_number.trim() || null,
         spec_date: form.spec_date || null,
         delivery_date: form.delivery_date || null,
@@ -529,15 +607,9 @@ function RequisitesEditor({
     <Card>
       <CardHeader
         title="Реквизиты"
-        description="Торговая площадка, номер и даты тендера"
+        description="Номер и даты тендера"
       />
       <CardBody className="flex flex-wrap items-end gap-4">
-        <Req
-          label="Торговая площадка"
-          value={form.trading_platform}
-          onChange={set("trading_platform")}
-          wide
-        />
         <Req label="Номер" value={form.spec_number} onChange={set("spec_number")} />
         <Req
           label="Дата"

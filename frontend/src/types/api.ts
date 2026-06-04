@@ -49,6 +49,8 @@ export interface SpecificationRead {
   client_name: string | null;
   client_id: string | null;
   trading_platform: string | null;
+  is_tp: boolean;
+  trading_platform_id: string | null;
   spec_number: string | null;
   spec_date: string | null;
   delivery_date: string | null;
@@ -74,6 +76,22 @@ export interface ClientCreate {
   name: string;
   inn?: string | null;
   contact?: string | null;
+  notes?: string | null;
+}
+
+export interface TradingPlatformRead {
+  id: string;
+  name: string;
+  url: string | null;
+  notes: string | null;
+  meta: Record<string, unknown>;
+  created_at: string;
+  specifications_count: number;
+}
+
+export interface TradingPlatformCreate {
+  name: string;
+  url?: string | null;
   notes?: string | null;
 }
 

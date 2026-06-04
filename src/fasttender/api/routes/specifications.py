@@ -38,6 +38,7 @@ from fasttender.models import (
     Specification,
     SpecificationStatus,
     SpecItem,
+    TradingPlatform,
     Verification,
 )
 from fasttender.schemas.specification import (
@@ -223,8 +224,32 @@ async def update_specification(
             spec.client_id = None
     if "client_name" in data:
         spec.client_name = data["client_name"]
-    # Реквизиты тендера
-    for field in ("trading_platform", "spec_number", "spec_date", "delivery_date"):
+    # Флаг «Спецификация ТП»: снятие — скрыть и очистить площадку
+    if "is_tp" in data:
+        if data["is_tp"]:
+            spec.is_tp = True
+        else:
+            spec.is_tp = False
+            spec.trading_platform_id = None
+            spec.trading_platform = None
+    # Выбор площадки из справочника
+    if "trading_platform_id" in data:
+        pid = data["trading_platform_id"]
+        if pid is not None:
+            platform = await session.get(TradingPlatform, pid)
+            if platform is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Площадка не найдена"},
+                )
+            spec.trading_platform_id = pid
+            spec.trading_platform = platform.name  # денорм-имя для экспорта
+            spec.is_tp = True
+        else:
+            spec.trading_platform_id = None
+            spec.trading_platform = None
+    # Прочие реквизиты тендера
+    for field in ("spec_number", "spec_date", "delivery_date"):
         if field in data:
             setattr(spec, field, data[field])
     await session.commit()

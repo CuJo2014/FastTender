@@ -14,6 +14,7 @@ from fasttender.api.routes import (
     items,
     specifications,
     suppliers,
+    trading_platforms,
 )
 from fasttender.core.config import get_settings
 from fasttender.core.db import dispose_engine
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router, prefix=api_prefix)
     app.include_router(suppliers.router, prefix=api_prefix)
     app.include_router(clients.router, prefix=api_prefix)
+    app.include_router(trading_platforms.router, prefix=api_prefix)
     app.include_router(items.router, prefix=api_prefix)
 
     return app

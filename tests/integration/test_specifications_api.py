@@ -320,7 +320,6 @@ async def test_patch_specification_requisites(
     patched = await client.patch(
         f"/api/v1/specifications/{spec.id}",
         json={
-            "trading_platform": "Сбербанк-АСT",
             "spec_number": "44-ФЗ/2026-001",
             "spec_date": "2026-06-01",
             "delivery_date": "2026-07-15",
@@ -328,7 +327,6 @@ async def test_patch_specification_requisites(
     )
     assert patched.status_code == 200
     body = patched.json()
-    assert body["trading_platform"] == "Сбербанк-АСT"
     assert body["spec_number"] == "44-ФЗ/2026-001"
     assert body["spec_date"] == "2026-06-01"
     assert body["delivery_date"] == "2026-07-15"
