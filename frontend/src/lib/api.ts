@@ -127,7 +127,14 @@ export const api = {
 
   updateSpecification: (
     specId: string,
-    patch: { client_id?: string | null; client_name?: string | null },
+    patch: {
+      client_id?: string | null;
+      client_name?: string | null;
+      trading_platform?: string | null;
+      spec_number?: string | null;
+      spec_date?: string | null;
+      delivery_date?: string | null;
+    },
   ) =>
     request<SpecificationRead>(`/specifications/${specId}`, {
       method: "PATCH",

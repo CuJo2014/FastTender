@@ -48,6 +48,10 @@ export interface SpecificationRead {
   source_filename: string;
   client_name: string | null;
   client_id: string | null;
+  trading_platform: string | null;
+  spec_number: string | null;
+  spec_date: string | null;
+  delivery_date: string | null;
   status: SpecificationStatus;
   error_message: string | null;
   created_at: string;

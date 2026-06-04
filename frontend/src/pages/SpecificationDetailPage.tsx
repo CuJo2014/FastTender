@@ -2,7 +2,11 @@ import { useCallback, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import type { SpecificationStatus, VerificationDecision } from "../types/api";
+import type {
+  SpecificationRead,
+  SpecificationStatus,
+  VerificationDecision,
+} from "../types/api";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
@@ -201,6 +205,8 @@ function DetailContent({ specId }: { specId: string }) {
         </CardBody>
       </Card>
       </div>
+
+      <RequisitesEditor specId={specId} spec={spec} />
 
       {isReady && (
         <Card>
@@ -473,6 +479,99 @@ function ClientPicker({
       ))}
       <option value="__new__">+ Создать нового…</option>
     </select>
+  );
+}
+
+function RequisitesEditor({
+  specId,
+  spec,
+}: {
+  specId: string;
+  spec: SpecificationRead;
+}) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    trading_platform: spec.trading_platform ?? "",
+    spec_number: spec.spec_number ?? "",
+    spec_date: spec.spec_date ?? "",
+    delivery_date: spec.delivery_date ?? "",
+  });
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.updateSpecification(specId, {
+        trading_platform: form.trading_platform.trim() || null,
+        spec_number: form.spec_number.trim() || null,
+        spec_date: form.spec_date || null,
+        delivery_date: form.delivery_date || null,
+      }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["specifications", specId] }),
+  });
+
+  const set = (k: keyof typeof form) => (v: string) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <Card>
+      <CardHeader
+        title="Реквизиты"
+        description="Торговая площадка, номер и даты тендера"
+      />
+      <CardBody className="flex flex-wrap items-end gap-4">
+        <Req
+          label="Торговая площадка"
+          value={form.trading_platform}
+          onChange={set("trading_platform")}
+          wide
+        />
+        <Req label="Номер" value={form.spec_number} onChange={set("spec_number")} />
+        <Req
+          label="Дата"
+          type="date"
+          value={form.spec_date}
+          onChange={set("spec_date")}
+        />
+        <Req
+          label="Дата поставки"
+          type="date"
+          value={form.delivery_date}
+          onChange={set("delivery_date")}
+        />
+        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          {save.isPending ? "Сохранение…" : "Сохранить"}
+        </Button>
+        {save.isSuccess && (
+          <span className="text-sm text-green-700">✓ Сохранено</span>
+        )}
+      </CardBody>
+    </Card>
+  );
+}
+
+function Req({
+  label,
+  value,
+  onChange,
+  type = "text",
+  wide,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: "text" | "date";
+  wide?: boolean;
+}) {
+  return (
+    <label className={"flex flex-col gap-1 " + (wide ? "min-w-64 flex-1" : "")}>
+      <span className="text-xs uppercase text-slate-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-slate-300 px-2 py-1 text-sm"
+      />
+    </label>
   );
 }
 

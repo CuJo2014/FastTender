@@ -130,7 +130,6 @@ async def list_specifications(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[SpecificationRead]:
-    settings = get_settings()
     rows = (
         await session.scalars(
             select(Specification)
@@ -140,22 +139,7 @@ async def list_specifications(
         )
     ).all()
 
-    return [
-        SpecificationRead(
-            id=r.id,
-            source_filename=r.source_filename,
-            client_name=r.client_name,
-            client_id=r.client_id,
-            status=r.status,
-            error_message=r.error_message,
-            created_at=r.created_at,
-            completed_at=r.completed_at,
-            counts=await _compute_counts(
-                session, r.id, settings.confidence_auto_confirm, settings.confidence_min
-            ),
-        )
-        for r in rows
-    ]
+    return [await _spec_read(session, r) for r in rows]
 
 
 @router.get(
@@ -173,20 +157,7 @@ async def get_specification(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"message": "Спецификация не найдена"},
         )
-    settings = get_settings()
-    return SpecificationRead(
-        id=spec.id,
-        source_filename=spec.source_filename,
-        client_name=spec.client_name,
-        client_id=spec.client_id,
-        status=spec.status,
-        error_message=spec.error_message,
-        created_at=spec.created_at,
-        completed_at=spec.completed_at,
-        counts=await _compute_counts(
-            session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
-        ),
-    )
+    return await _spec_read(session, spec)
 
 
 @router.delete(
@@ -252,22 +223,13 @@ async def update_specification(
             spec.client_id = None
     if "client_name" in data:
         spec.client_name = data["client_name"]
+    # Реквизиты тендера
+    for field in ("trading_platform", "spec_number", "spec_date", "delivery_date"):
+        if field in data:
+            setattr(spec, field, data[field])
     await session.commit()
     await session.refresh(spec)
-    settings = get_settings()
-    return SpecificationRead(
-        id=spec.id,
-        source_filename=spec.source_filename,
-        client_name=spec.client_name,
-        client_id=spec.client_id,
-        status=spec.status,
-        error_message=spec.error_message,
-        created_at=spec.created_at,
-        completed_at=spec.completed_at,
-        counts=await _compute_counts(
-            session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
-        ),
-    )
+    return await _spec_read(session, spec)
 
 
 @router.get(
@@ -600,6 +562,16 @@ async def export_specification(
 
 
 # --- Helpers ---
+
+
+async def _spec_read(session: AsyncSession, spec: Specification) -> SpecificationRead:
+    """Specification ORM → SpecificationRead (+ counts). Через model_validate,
+    чтобы новые колонки (клиент, реквизиты) подхватывались автоматически."""
+    settings = get_settings()
+    counts = await _compute_counts(
+        session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
+    )
+    return SpecificationRead.model_validate({**spec.__dict__, "counts": counts})
 
 
 async def _compute_counts(

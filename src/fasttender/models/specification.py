@@ -1,10 +1,10 @@
 """Спецификация клиента (раздел 8.1)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,6 +31,12 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+
+    # Реквизиты спецификации/тендера (миграция 0012).
+    trading_platform: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    spec_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    spec_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     status: Mapped[SpecificationStatus] = mapped_column(
         Enum(

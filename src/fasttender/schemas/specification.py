@@ -1,6 +1,6 @@
 """DTO для API спецификаций (Приложение C.4)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -36,6 +36,11 @@ class SpecificationRead(BaseModel):
     source_filename: str
     client_name: str | None
     client_id: UUID | None = None
+    # Реквизиты тендера (миграция 0012)
+    trading_platform: str | None = None
+    spec_number: str | None = None
+    spec_date: date | None = None
+    delivery_date: date | None = None
     status: SpecificationStatus
     error_message: str | None = None
     created_at: datetime
@@ -60,6 +65,10 @@ class SpecificationUpdate(BaseModel):
 
     client_id: UUID | None = None
     client_name: str | None = Field(None, max_length=255)
+    trading_platform: str | None = Field(None, max_length=255)
+    spec_number: str | None = Field(None, max_length=128)
+    spec_date: date | None = None
+    delivery_date: date | None = None
 
 
 class LinkedCatalogItemRead(BaseModel):

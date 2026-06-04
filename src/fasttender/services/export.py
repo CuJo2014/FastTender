@@ -271,6 +271,15 @@ def _to_xlsx(rows: list[dict[str, Any]], spec: Specification) -> bytes:
     ws.append([f"Спецификация: {spec.source_filename}"])
     if spec.client_name:
         ws.append([f"Клиент: {spec.client_name}"])
+    # Реквизиты тендера
+    if spec.trading_platform:
+        ws.append([f"Торговая площадка: {spec.trading_platform}"])
+    if spec.spec_number:
+        ws.append([f"Номер: {spec.spec_number}"])
+    if spec.spec_date:
+        ws.append([f"Дата: {spec.spec_date.isoformat()}"])
+    if spec.delivery_date:
+        ws.append([f"Дата поставки: {spec.delivery_date.isoformat()}"])
     ws.append([f"Сформировано: {datetime.now(UTC).isoformat(timespec='seconds')}"])
     ws.append([])
 

@@ -305,6 +305,38 @@ async def test_delete_specification_404_for_unknown_id(
     assert resp.status_code == 404
 
 
+async def test_patch_specification_requisites(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """PATCH реквизитов тендера → сохраняются и возвращаются в GET."""
+    from fasttender.models import Specification
+
+    spec = Specification(source_filename="s.xlsx", storage_path="/tmp/s.xlsx")
+    committed_db.add(spec)
+    await committed_db.commit()
+    await committed_db.refresh(spec)
+
+    patched = await client.patch(
+        f"/api/v1/specifications/{spec.id}",
+        json={
+            "trading_platform": "Сбербанк-АСT",
+            "spec_number": "44-ФЗ/2026-001",
+            "spec_date": "2026-06-01",
+            "delivery_date": "2026-07-15",
+        },
+    )
+    assert patched.status_code == 200
+    body = patched.json()
+    assert body["trading_platform"] == "Сбербанк-АСT"
+    assert body["spec_number"] == "44-ФЗ/2026-001"
+    assert body["spec_date"] == "2026-06-01"
+    assert body["delivery_date"] == "2026-07-15"
+
+    got = (await client.get(f"/api/v1/specifications/{spec.id}")).json()
+    assert got["delivery_date"] == "2026-07-15"
+
+
 async def test_get_specification_404_for_unknown_id(
     client: AsyncClient,
     committed_db: AsyncSession,
