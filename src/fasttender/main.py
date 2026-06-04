@@ -7,7 +7,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fasttender import __version__
-from fasttender.api.routes import catalog, health, items, specifications, suppliers
+from fasttender.api.routes import (
+    catalog,
+    clients,
+    health,
+    items,
+    specifications,
+    suppliers,
+)
 from fasttender.core.config import get_settings
 from fasttender.core.db import dispose_engine
 from fasttender.core.logging import configure_logging, get_logger
@@ -50,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(specifications.router, prefix=api_prefix)
     app.include_router(catalog.router, prefix=api_prefix)
     app.include_router(suppliers.router, prefix=api_prefix)
+    app.include_router(clients.router, prefix=api_prefix)
     app.include_router(items.router, prefix=api_prefix)
 
     return app

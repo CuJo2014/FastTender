@@ -30,6 +30,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from fasttender.core.config import get_settings
 from fasttender.core.db import get_session
 from fasttender.models import (
+    Client,
     DataSource,
     DataSourceType,
     Item,
@@ -46,6 +47,7 @@ from fasttender.schemas.specification import (
     PaginatedSpecItems,
     SpecificationCounts,
     SpecificationRead,
+    SpecificationUpdate,
     SpecificationUploadResponse,
     SpecItemRead,
     VerificationRead,
@@ -143,6 +145,7 @@ async def list_specifications(
             id=r.id,
             source_filename=r.source_filename,
             client_name=r.client_name,
+            client_id=r.client_id,
             status=r.status,
             error_message=r.error_message,
             created_at=r.created_at,
@@ -175,6 +178,7 @@ async def get_specification(
         id=spec.id,
         source_filename=spec.source_filename,
         client_name=spec.client_name,
+        client_id=spec.client_id,
         status=spec.status,
         error_message=spec.error_message,
         created_at=spec.created_at,
@@ -214,6 +218,56 @@ async def delete_specification(
         with suppress(OSError):
             Path(storage_path).unlink(missing_ok=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.patch(
+    "/{spec_id}",
+    response_model=SpecificationRead,
+    summary="Изменить спецификацию (привязка к клиенту)",
+)
+async def update_specification(
+    spec_id: UUID,
+    payload: SpecificationUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> SpecificationRead:
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+    data = payload.model_dump(exclude_unset=True)
+    if "client_id" in data:
+        cid = data["client_id"]
+        if cid is not None:
+            client = await session.get(Client, cid)
+            if client is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Клиент не найден"},
+                )
+            spec.client_id = cid
+            spec.client_name = client.name  # денормализуем для списка/экспорта
+        else:
+            spec.client_id = None
+    if "client_name" in data:
+        spec.client_name = data["client_name"]
+    await session.commit()
+    await session.refresh(spec)
+    settings = get_settings()
+    return SpecificationRead(
+        id=spec.id,
+        source_filename=spec.source_filename,
+        client_name=spec.client_name,
+        client_id=spec.client_id,
+        status=spec.status,
+        error_message=spec.error_message,
+        created_at=spec.created_at,
+        completed_at=spec.completed_at,
+        counts=await _compute_counts(
+            session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
+        ),
+    )
 
 
 @router.get(

@@ -35,6 +35,7 @@ class SpecificationRead(BaseModel):
     id: UUID
     source_filename: str
     client_name: str | None
+    client_id: UUID | None = None
     status: SpecificationStatus
     error_message: str | None = None
     created_at: datetime
@@ -49,6 +50,16 @@ class SpecificationUploadResponse(BaseModel):
     status: SpecificationStatus
     filename: str
     created_at: datetime
+
+
+class SpecificationUpdate(BaseModel):
+    """Тело PATCH /specifications/{id} — все поля опциональны.
+
+    client_id — привязка к справочнику клиентов; null отвязывает.
+    """
+
+    client_id: UUID | None = None
+    client_name: str | None = Field(None, max_length=255)
 
 
 class LinkedCatalogItemRead(BaseModel):
