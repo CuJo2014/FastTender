@@ -47,11 +47,30 @@ export interface SpecificationRead {
   id: string;
   source_filename: string;
   client_name: string | null;
+  client_id: string | null;
   status: SpecificationStatus;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
   counts: SpecificationCounts;
+}
+
+export interface ClientRead {
+  id: string;
+  name: string;
+  inn: string | null;
+  contact: string | null;
+  notes: string | null;
+  meta: Record<string, unknown>;
+  created_at: string;
+  specifications_count: number;
+}
+
+export interface ClientCreate {
+  name: string;
+  inn?: string | null;
+  contact?: string | null;
+  notes?: string | null;
 }
 
 export interface SpecificationUploadResponse {

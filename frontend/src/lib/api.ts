@@ -5,6 +5,8 @@ import type {
   AutoConfirmRequest,
   AutoConfirmResponse,
   CatalogInfo,
+  ClientCreate,
+  ClientRead,
   CatalogSearchResult,
   ImportMode,
   ImportReport,
@@ -123,8 +125,33 @@ export const api = {
   deleteSpecification: (specId: string) =>
     request<void>(`/specifications/${specId}`, { method: "DELETE" }),
 
+  updateSpecification: (
+    specId: string,
+    patch: { client_id?: string | null; client_name?: string | null },
+  ) =>
+    request<SpecificationRead>(`/specifications/${specId}`, {
+      method: "PATCH",
+      json: patch,
+    }),
+
   exportUrl: (specId: string, format: "xlsx" | "csv" = "xlsx") =>
     `${BASE}/specifications/${specId}/export?format=${format}`,
+
+  // --- Clients ---
+
+  listClients: (q?: string) =>
+    request<ClientRead[]>(
+      `/clients/${q ? `?q=${encodeURIComponent(q)}` : ""}`,
+    ),
+
+  createClient: (payload: ClientCreate) =>
+    request<ClientRead>("/clients/", { method: "POST", json: payload }),
+
+  updateClient: (id: string, payload: Partial<ClientCreate>) =>
+    request<ClientRead>(`/clients/${id}`, { method: "PATCH", json: payload }),
+
+  deleteClient: (id: string) =>
+    request<void>(`/clients/${id}`, { method: "DELETE" }),
 
   // --- Catalog ---
 

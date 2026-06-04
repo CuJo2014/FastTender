@@ -137,14 +137,7 @@ function DetailContent({ specId }: { specId: string }) {
       <Card>
         <CardHeader
           title={spec.source_filename}
-          description={
-            <>
-              {spec.client_name && (
-                <span className="mr-3">Клиент: {spec.client_name}</span>
-              )}
-              <span>Загружен: {formatDateTime(spec.created_at)}</span>
-            </>
-          }
+          description={<span>Загружен: {formatDateTime(spec.created_at)}</span>}
           actions={
             <Link to="/specifications">
               <Button variant="ghost">← К списку</Button>
@@ -158,6 +151,13 @@ function DetailContent({ specId }: { specId: string }) {
               <Badge tone={statusTone(spec.status)}>
                 {statusLabel(spec.status)}
               </Badge>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs uppercase text-slate-500">Клиент</div>
+            <div className="mt-1">
+              <ClientPicker specId={specId} clientId={spec.client_id} />
             </div>
           </div>
 
@@ -418,6 +418,61 @@ function Counter({
         {value}
       </div>
     </div>
+  );
+}
+
+function ClientPicker({
+  specId,
+  clientId,
+}: {
+  specId: string;
+  clientId: string | null;
+}) {
+  const qc = useQueryClient();
+  const { data: clients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => api.listClients(),
+  });
+
+  const assign = useMutation({
+    mutationFn: (cid: string | null) =>
+      api.updateSpecification(specId, { client_id: cid }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["specifications", specId] }),
+  });
+  const createAndAssign = useMutation({
+    mutationFn: (name: string) => api.createClient({ name }),
+    onSuccess: (c) => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      assign.mutate(c.id);
+    },
+  });
+
+  const onChange = (value: string) => {
+    if (value === "__new__") {
+      const name = window.prompt("Название нового клиента:")?.trim();
+      if (name) createAndAssign.mutate(name);
+      return;
+    }
+    assign.mutate(value || null);
+  };
+
+  const busy = assign.isPending || createAndAssign.isPending;
+
+  return (
+    <select
+      value={clientId ?? ""}
+      disabled={busy}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded border border-slate-300 px-2 py-1 text-sm disabled:opacity-50"
+    >
+      <option value="">— не выбран —</option>
+      {(clients ?? []).map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+      <option value="__new__">+ Создать нового…</option>
+    </select>
   );
 }
 

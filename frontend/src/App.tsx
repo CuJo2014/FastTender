@@ -5,6 +5,7 @@ import { SpecificationUploadPage } from "./pages/SpecificationUploadPage";
 import { SpecificationDetailPage } from "./pages/SpecificationDetailPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { SuppliersPage } from "./pages/SuppliersPage";
+import { ClientsPage } from "./pages/ClientsPage";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/specifications/:specId" element={<SpecificationDetailPage />} />
         <Route path="/catalog" element={<CatalogPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
+        <Route path="/clients" element={<ClientsPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

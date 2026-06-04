@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { to: "/specifications", label: "Спецификации" },
   { to: "/catalog", label: "Каталог" },
   { to: "/suppliers", label: "Поставщики" },
+  { to: "/clients", label: "Клиенты" },
 ];
 
 export function AppLayout() {
