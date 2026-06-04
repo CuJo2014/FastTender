@@ -95,6 +95,16 @@ function DetailContent({ specId }: { specId: string }) {
     },
   });
 
+  const unverifyMutation = useMutation({
+    mutationFn: (specItemId: string) => api.unverifySpecItem(specId, specItemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({
+        queryKey: ["specifications", specId, "items"],
+      });
+    },
+  });
+
   const autoConfirmMutation = useMutation({
     mutationFn: () =>
       api.autoConfirm(specId, {
@@ -316,7 +326,7 @@ function DetailContent({ specId }: { specId: string }) {
                     <SpecItemRow
                       key={item.id}
                       item={item}
-                      pending={verifyMutation.isPending}
+                      pending={verifyMutation.isPending || unverifyMutation.isPending}
                       // Строка «прилипает» под шапкой таблицы (nav 56 + шапка
                       // спеки + высота thead ~41) при разворачивании.
                       stickyTop={stickyHeaderHeight + 56 + 41}
@@ -326,6 +336,9 @@ function DetailContent({ specId }: { specId: string }) {
                           decision,
                           chosenItemId,
                         })
+                      }
+                      onUnverify={(specItemId) =>
+                        unverifyMutation.mutate(specItemId)
                       }
                     />
                   ))}

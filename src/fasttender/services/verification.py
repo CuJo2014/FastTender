@@ -76,6 +76,22 @@ class VerificationService:
         await self._session.flush()
         return existing
 
+    async def delete(self, *, spec_id: UUID, spec_item_id: UUID) -> bool:
+        """Удаляет Verification строки (откат к «не верифицировано»).
+
+        Проверяет, что SpecItem принадлежит spec_id. Возвращает True, если
+        запись была и удалена; False, если верификации не было.
+        """
+        spec_item = await self._load_spec_item(spec_id, spec_item_id)
+        existing = await self._session.scalar(
+            select(Verification).where(Verification.spec_item_id == spec_item.id)
+        )
+        if existing is None:
+            return False
+        await self._session.delete(existing)
+        await self._session.flush()
+        return True
+
     async def auto_confirm(
         self,
         *,

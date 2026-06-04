@@ -428,6 +428,35 @@ async def verify_spec_item(
     )
 
 
+@router.delete(
+    "/{spec_id}/items/{spec_item_id}/verify",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Отказаться от сопоставления строки (откат верификации)",
+)
+async def unverify_spec_item(
+    spec_id: UUID,
+    spec_item_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Удаляет решение по строке — возвращает её в «не верифицировано»
+    (менеджер ошибся). Если спека была VERIFIED — статус снова REVIEWING."""
+    service = VerificationService(session)
+    try:
+        await service.delete(spec_id=spec_id, spec_item_id=spec_item_id)
+    except VerificationError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": str(exc)},
+        ) from exc
+    # Демоут: спека больше не полностью верифицирована
+    spec = await session.get(Specification, spec_id)
+    if spec is not None and spec.status is SpecificationStatus.VERIFIED:
+        spec.status = SpecificationStatus.REVIEWING
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 async def _auto_promote_to_verified(session: AsyncSession, spec_id: UUID) -> None:
     """Если все spec_item имеют Verification — статус спеки → VERIFIED."""
     spec = await session.get(Specification, spec_id)

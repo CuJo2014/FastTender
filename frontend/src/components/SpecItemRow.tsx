@@ -12,6 +12,7 @@ interface Props {
     decision: VerificationDecision,
     chosenItemId?: string | null,
   ) => void;
+  onUnverify?: (specItemId: string) => void;
   pending: boolean;
   defaultExpanded?: boolean;
   /** px-смещение для «прилипания» строки при разворачивании (под шапкой). */
@@ -21,6 +22,7 @@ interface Props {
 export function SpecItemRow({
   item,
   onVerify,
+  onUnverify,
   pending,
   defaultExpanded = false,
   stickyTop = 0,
@@ -134,7 +136,18 @@ export function SpecItemRow({
                 disabled={pending}
               />
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex items-center justify-end gap-2 pt-2">
+                {item.verification && onUnverify && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mr-auto text-amber-700 hover:bg-amber-50"
+                    onClick={() => onUnverify(item.id)}
+                    disabled={pending}
+                  >
+                    ↺ Сбросить решение
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

@@ -65,6 +65,44 @@ async def _setup_processed_spec(session: AsyncSession, tmp_path: Path) -> Specif
 # --- POST verify ---
 
 
+async def test_delete_verification_reverts_to_unverified(
+    session: AsyncSession,
+    service: VerificationService,
+    tmp_path: Path,
+) -> None:
+    """delete() убирает решение строки; повторный delete → False."""
+    spec = await _setup_processed_spec(session, tmp_path)
+    blt = await session.scalar(
+        select(SpecItem).where(SpecItem.article_normalized == "BLT001")
+    )
+    catalog_item = await session.scalar(select(Item).where(Item.article_normalized == "BLT001"))
+
+    await service.upsert(
+        spec_id=spec.id,
+        spec_item_id=blt.id,
+        decision=VerificationDecision.CONFIRMED,
+        chosen_item_id=catalog_item.id,
+    )
+    await session.commit()
+
+    deleted = await service.delete(spec_id=spec.id, spec_item_id=blt.id)
+    await session.commit()
+    assert deleted is True
+    assert (
+        await session.scalar(
+            select(Verification).where(Verification.spec_item_id == blt.id)
+        )
+        is None
+    )
+
+    # повторно — нечего удалять
+    assert await service.delete(spec_id=spec.id, spec_item_id=blt.id) is False
+
+    # чужой spec_id → ошибка
+    with pytest.raises(VerificationError):
+        await service.delete(spec_id=uuid4(), spec_item_id=blt.id)
+
+
 async def test_verify_confirmed_creates_record(
     session: AsyncSession,
     service: VerificationService,

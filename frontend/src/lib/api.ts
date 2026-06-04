@@ -125,6 +125,12 @@ export const api = {
   deleteSpecification: (specId: string) =>
     request<void>(`/specifications/${specId}`, { method: "DELETE" }),
 
+  unverifySpecItem: (specId: string, specItemId: string) =>
+    request<void>(
+      `/specifications/${specId}/items/${specItemId}/verify`,
+      { method: "DELETE" },
+    ),
+
   updateSpecification: (
     specId: string,
     patch: {
