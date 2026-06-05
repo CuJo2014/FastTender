@@ -9,6 +9,7 @@
 """
 
 import re
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -25,6 +26,20 @@ from fasttender.services.importer.types import (
 )
 from fasttender.services.parser import ParsedItem
 from fasttender.services.parser.value_normalizer import normalize_article, normalize_name
+
+# Макс. элементов в одном IN/NOT IN. PostgreSQL/asyncpg не допускает больше
+# 32767 bind-параметров на запрос — на больших каталогах (>32767 строк)
+# единый IN-список превышал лимит и ронял импорт с InterfaceError
+# (инцидент 2026-06-05). Держим заметно ниже лимита: 1-2 параметра базового
+# фильтра + чанк всё ещё умещается с запасом.
+_PARAM_CHUNK = 10_000
+
+
+def _chunked[T](items: Sequence[T], size: int) -> Iterator[Sequence[T]]:
+    """Бьёт последовательность на чанки ≤ size — чтобы число bind-параметров
+    в IN/NOT IN не превышало лимит PostgreSQL/asyncpg."""
+    for start in range(0, len(items), size):
+        yield items[start : start + size]
 
 
 def now_utc() -> datetime:
@@ -455,18 +470,20 @@ async def upsert_items(
     if not include_inactive:
         base_filter.append(Item.is_active.is_(True))
 
-    if codes:
-        stmt = select(Item).where(*base_filter, Item.code_1c.in_(codes))
+    # Батчим IN-списки: на больших каталогах единый IN превышал лимит
+    # bind-параметров asyncpg (см. _PARAM_CHUNK).
+    for code_batch in _chunked(codes, _PARAM_CHUNK):
+        stmt = select(Item).where(*base_filter, Item.code_1c.in_(code_batch))
         for row in (await session.scalars(stmt)).all():
             if row.code_1c:
                 # active имеет приоритет над inactive при коллизии
                 if row.code_1c not in existing_by_code or row.is_active:
                     existing_by_code[row.code_1c] = row
 
-    if articles:
+    for article_batch in _chunked(articles, _PARAM_CHUNK):
         stmt = select(Item).where(
             *base_filter,
-            Item.article_normalized.in_(articles),
+            Item.article_normalized.in_(article_batch),
             Item.code_1c.is_(None),
         )
         for row in (await session.scalars(stmt)).all():
@@ -558,21 +575,36 @@ async def apply_to_source(
             sku_assigner=sku_assigner,
             include_inactive=True,
         )
-        # flush чтобы INSERT'ы новых items дошли до БД до UPDATE
+        # flush чтобы INSERT'ы новых items дошли до БД до вычисления разницы
         await session.flush()
-        deactivate_filters = [Item.source_id == source.id, Item.is_active.is_(True)]
-        if touched_ids:
-            # list() — SQLAlchemy не всегда корректно разворачивает set
-            deactivate_filters.append(Item.id.notin_(list(touched_ids)))
-        deactivated_result = await session.execute(
-            update(Item)
-            .where(*deactivate_filters)
-            .values(is_active=False)
-            .execution_options(synchronize_session=False)
+        # Деактивируем всё, что не попало в новый файл. Раньше тут был
+        # `id NOT IN (touched_ids)`, но на больших каталогах (>32767 строк)
+        # список bind-параметров превышал лимит asyncpg (инцидент 2026-06-05).
+        # Считаем разницу в Python и гасим батчами IN: active_ids после upsert
+        # = (нетронутые active) ∪ (обновлённые) ∪ (новые); вычитая touched_ids
+        # получаем ровно нетронутые active = то, что исчезло из файла.
+        active_ids = set(
+            (
+                await session.scalars(
+                    select(Item.id).where(
+                        Item.source_id == source.id, Item.is_active.is_(True)
+                    )
+                )
+            ).all()
         )
+        to_deactivate = list(active_ids - touched_ids)
+        deactivated = 0
+        for id_batch in _chunked(to_deactivate, _PARAM_CHUNK):
+            result = await session.execute(
+                update(Item)
+                .where(Item.id.in_(id_batch))
+                .values(is_active=False)
+                .execution_options(synchronize_session=False)
+            )
+            deactivated += result.rowcount or 0
         report.rows_imported = imported
         report.rows_updated = updated
-        report.rows_deactivated = deactivated_result.rowcount or 0
+        report.rows_deactivated = deactivated
     elif mode is ImportMode.MERGE:
         imported, updated, _touched = await upsert_items(
             session, source.id, parsed_items, sku_assigner=sku_assigner
