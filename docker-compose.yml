@@ -3,6 +3,11 @@
 # migrations (одноразовый прогон Alembic).
 # Раздел 13.6 архитектурного документа.
 
+# Имя проекта — отдельное от прод-стека (`fasttender`). Иначе `docker compose`
+# из этого каталога реконсайлит и пересоздаёт прод-контейнеры (инцидент
+# 2026-06-05: dev `up -d postgres` подменил прод-БД). См. deploy/OPERATIONS.md.
+name: fasttender_dev
+
 services:
   postgres:
     image: postgres:16-alpine

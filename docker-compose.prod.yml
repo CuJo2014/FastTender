@@ -15,6 +15,10 @@
 #   $EDITOR .env.prod                  # заполнить DOMAIN, пароли, BASIC_AUTH_HASH
 #   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 
+# Фиксируем имя прод-проекта явно (по умолчанию = basename каталога). Защита от
+# коллизии с dev-compose, который теперь `fasttender_dev` (инцидент 2026-06-05).
+name: fasttender
+
 services:
   postgres:
     image: postgres:16-alpine

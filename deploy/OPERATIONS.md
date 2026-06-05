@@ -356,3 +356,19 @@ docker logs -f ft_prod_postgres     # DB
 
 См. `deploy/DIAGNOSTICS.md` — отдельный документ про инциденты
 30 мая 2026.
+
+## Dev и Prod compose — РАЗНЫЕ проекты
+
+Прод-стек: `docker-compose.prod.yml`, проект **`fasttender`** (фиксирован
+через `name:`). Dev-стек: `docker-compose.yml`, проект **`fasttender_dev`**.
+
+Раньше оба резолвились в `fasttender` (basename каталога), и запуск
+dev-compose реконсайлил прод-контейнеры. Инцидент 2026-06-05: на сервере
+`docker compose -f docker-compose.yml up -d postgres` пересоздал
+`ft_prod_postgres` и подменил прод-БД (данные уцелели — прод на bind-mount
+`/srv/fasttender/pgdata`). Теперь имена разные, коллизии нет.
+
+Правила:
+- Прод — ТОЛЬКО `docker compose -f docker-compose.prod.yml --env-file .env.prod ...`.
+- Для тестов поднимать БД отдельным `docker run` (свой порт/имя), не через compose.
+- НЕ запускать `docker compose -f docker-compose.yml ...` на прод-сервере без нужды.
