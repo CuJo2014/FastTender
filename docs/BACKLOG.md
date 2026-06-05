@@ -26,6 +26,7 @@
 - ~~**External backup (S3/scp/rsync)**~~ ✓ done 2026-06-01: ежедневный rclone → Google Drive (см. `deploy/OPERATIONS.md`)
 - **Bind-mount postgres volume** — превентивная защита от случайного `docker volume prune`
 - **Systemd watchdog для авто-recovery** — пока инцидентов нет, но было бы хорошо иметь
+- **Очистка `frontend_dist` при деплое** — том не чистится при копировании нового dist, старые хешированные бандлы копятся (на 2026-06-05 уже 25 `.js`). Функционально не мешает (`index.html` указывает на актуальный), но это растущий мусор. Добавить `rm -rf /srv/frontend/*` перед копированием нового dist в шаге `frontend-build` (`frontend/Dockerfile`).
 - ~~**Cleanup deactivated**~~ ✓ done 2026-06-02: ежедневный cron в 04:20 UTC удаляет «осиротевшие» (без ссылок) deactivated позиции
 
 ### Парсер / Импорт
