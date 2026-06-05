@@ -46,6 +46,12 @@ class Weights:
     exact_article_brand_bump: float = 0.03
     exact_article_unit_bump: float = 0.02
 
+    # Код, извлечённый из наименования и совпавший с article каталога
+    # (point 2). Доверие НИЖЕ явного артикула — поэтому аддитивный буст,
+    # а не baseline 0.95. Подбирается на gold dataset.
+    extracted_code_exact_boost: float = 0.25
+    extracted_code_fuzzy_weight: float = 0.12
+
 
 @dataclass
 class AggregatedHit:
@@ -59,15 +65,27 @@ class AggregatedHit:
     article_exact: float = 0.0  # 1.0 если был exact-hit, иначе 0
     article_fuzzy: float = 0.0  # similarity для fuzzy-hit
     lexical: float = 0.0  # нормализованный score из search_lexical
+    code_exact: float = 0.0  # 1.0 если извлечённый из имени код совпал точно
+    code_fuzzy: float = 0.0  # similarity для fuzzy-совпадения извлечённого кода
+    code_matched: str | None = None  # сам код, который совпал (для explanation)
     levels_hit: list[MatchType] = field(default_factory=list)
 
 
-def merge_hits(per_level: dict[MatchType, list[SearchHit]]) -> list[AggregatedHit]:
+def merge_hits(
+    per_level: dict[MatchType, list[SearchHit]],
+    *,
+    code_exact_hits: list[tuple[SearchHit, str]] | None = None,
+    code_fuzzy_hits: list[tuple[SearchHit, str]] | None = None,
+) -> list[AggregatedHit]:
     """Дедупликация пула кандидатов по item_id.
 
     Каждый item сохраняет лучшие оценки с каждого уровня (если
     встречается несколько раз). Multi-level boost в Фазе 1 не вводим —
     только запоминаем `levels_hit` для прозрачности (см. план).
+
+    `code_exact_hits` / `code_fuzzy_hits` — пары (hit, код), найденные по
+    извлечённым из наименования кодам (point 2). Item, найденный ТОЛЬКО по
+    коду, тоже попадает в пул (создаётся AggregatedHit).
     """
     by_item: dict[str, AggregatedHit] = {}
 
@@ -92,6 +110,26 @@ def merge_hits(per_level: dict[MatchType, list[SearchHit]]) -> list[AggregatedHi
                 agg.article_fuzzy = max(agg.article_fuzzy, hit.score)
             elif match_type is MatchType.LEXICAL:
                 agg.lexical = max(agg.lexical, hit.score)
+
+    def _agg_for(hit: SearchHit) -> AggregatedHit:
+        key = str(hit.item_id)
+        agg = by_item.get(key)
+        if agg is None:
+            agg = AggregatedHit(hit=hit)
+            by_item[key] = agg
+        return agg
+
+    for hit, code in code_exact_hits or []:
+        agg = _agg_for(hit)
+        if 1.0 > agg.code_exact:
+            agg.code_matched = code
+        agg.code_exact = max(agg.code_exact, 1.0)
+
+    for hit, code in code_fuzzy_hits or []:
+        agg = _agg_for(hit)
+        if hit.score > agg.code_fuzzy and agg.code_exact == 0.0:
+            agg.code_matched = code
+        agg.code_fuzzy = max(agg.code_fuzzy, hit.score)
 
     return list(by_item.values())
 
@@ -141,14 +179,39 @@ def score_candidate(
     else:
         # Уровни 2 + 3 — взвешенная сумма + бусты
         article_similarity = agg.article_fuzzy
-        weighted = weights.w_article * article_similarity + weights.w_lexical * agg.lexical
+        # Point 1: если у входной позиции НЕТ артикула, артикульный канал не
+        # несёт сигнала — перераспределяем его вес на лексику. Иначе даже
+        # точный name-match упирается в потолок w_lexical (≈0.5) и попадает
+        # в «Не найдено». См. диагностику «нулевого» матчинга 2026-06-05.
+        if input_.article_normalized:
+            weighted = weights.w_article * article_similarity + weights.w_lexical * agg.lexical
+        else:
+            weighted = (weights.w_article + weights.w_lexical) * agg.lexical
+
+        # Point 2: код, извлечённый из наименования, совпал с article каталога.
+        # Доверие ниже явного артикула → аддитивный буст (не baseline 0.95).
+        code_bonus = 0.0
+        if agg.code_exact >= 1.0:
+            code_bonus = weights.extracted_code_exact_boost
+            extracted_code_match = "exact"
+        elif agg.code_fuzzy > 0:
+            code_bonus = weights.extracted_code_fuzzy_weight * agg.code_fuzzy
+            extracted_code_match = "fuzzy"
+        else:
+            extracted_code_match = "none"
+
         bonuses = (weights.boost_brand if brand else 0.0) + (weights.boost_unit if unit else 0.0)
-        final = weighted + bonuses
+        final = weighted + bonuses + code_bonus
+
         if article_similarity > 0:
             article_match = "fuzzy"
             primary = (
                 MatchType.FUZZY_ARTICLE if article_similarity >= agg.lexical else MatchType.LEXICAL
             )
+        elif extracted_code_match != "none":
+            article_match = "extracted_code"
+            # Совпадение по коду из имени — считаем «артикульным» типом.
+            primary = MatchType.FUZZY_ARTICLE if agg.lexical < 0.5 else MatchType.LEXICAL
         else:
             article_match = "none"
             primary = MatchType.LEXICAL
@@ -162,6 +225,8 @@ def score_candidate(
         semantic_similarity=0.0,
         brand_match=brand,
         unit_match=unit,
+        extracted_code_match=extracted_code_match if agg.article_exact < 1.0 else "none",
+        extracted_code=agg.code_matched if agg.article_exact < 1.0 else None,
         final_score=final,
         human_readable="",  # заполним ниже
         levels_hit=list(agg.levels_hit),
@@ -194,6 +259,12 @@ def human_readable_explanation(explanation: Explanation) -> str:
         parts.append("артикул совпал точно")
     elif explanation.article_match == "fuzzy":
         parts.append(f"артикул похож (similarity={explanation.article_similarity:.2f})")
+
+    if explanation.extracted_code_match == "exact":
+        code = explanation.extracted_code or "код"
+        parts.append(f"код из наименования совпал ({code})")
+    elif explanation.extracted_code_match == "fuzzy":
+        parts.append("код из наименования похож")
 
     if explanation.lexical_score > 0:
         parts.append(f"наименование близко (score={explanation.lexical_score:.2f})")

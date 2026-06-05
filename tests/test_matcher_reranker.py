@@ -115,8 +115,9 @@ class TestScoreCandidateFormula:
             levels_hit=[MatchType.LEXICAL],
         )
         cand = score_candidate(_input(article_normalized=None), agg, Weights(), rank=1)
-        # final = 0.5*0 + 0.5*0.7 = 0.35
-        assert cand.confidence == pytest.approx(0.35)
+        # Point 1: у входа нет артикула → его вес отдан лексике → 1.0 * 0.7 = 0.7
+        # (раньше было 0.5*0.7=0.35 и матч прятался в «Не найдено»).
+        assert cand.confidence == pytest.approx(0.7)
         assert cand.primary_match_type is MatchType.LEXICAL
 
     def test_fuzzy_and_lexical_combined(self) -> None:
@@ -277,3 +278,93 @@ class TestHumanReadable:
         )
         text = human_readable_explanation(explanation)
         assert text == "слабое совпадение"
+
+
+class TestNameOnlyWeightRedistribution:
+    """Point 1: у входа без артикула вес артикульного канала уходит лексике."""
+
+    def test_no_article_gives_full_weight_to_lexical(self) -> None:
+        agg = AggregatedHit(
+            hit=_hit(score=0.7, match_type=MatchType.LEXICAL),
+            lexical=0.7,
+            levels_hit=[MatchType.LEXICAL],
+        )
+        cand = score_candidate(_input(article_normalized=None), agg, Weights(), rank=1)
+        assert cand.confidence == pytest.approx(0.7)  # (0.5+0.5)*0.7
+
+    def test_with_article_keeps_split_weight(self) -> None:
+        # У входа ЕСТЬ артикул → перераспределения нет, обычные 0.5/0.5
+        agg = AggregatedHit(
+            hit=_hit(score=0.7, match_type=MatchType.LEXICAL),
+            lexical=0.7,
+            levels_hit=[MatchType.LEXICAL],
+        )
+        cand = score_candidate(_input(article_normalized="BLT001"), agg, Weights(), rank=1)
+        assert cand.confidence == pytest.approx(0.35)  # 0.5*0.7
+
+
+class TestExtractedCodeBoost:
+    """Point 2: код из наименования совпал с article каталога → буст."""
+
+    def test_exact_code_boost(self) -> None:
+        agg = AggregatedHit(
+            hit=_hit(score=0.4, match_type=MatchType.LEXICAL),
+            lexical=0.4,
+            code_exact=1.0,
+            code_matched="2342380",
+            levels_hit=[MatchType.LEXICAL],
+        )
+        cand = score_candidate(_input(article_normalized=None), agg, Weights(), rank=1)
+        # name-only 1.0*0.4 + boost 0.25 = 0.65
+        assert cand.confidence == pytest.approx(0.65)
+        assert cand.explanation.extracted_code_match == "exact"
+        assert cand.explanation.extracted_code == "2342380"
+        # код доминирует над слабой лексикой → помечаем артикульным типом
+        assert cand.primary_match_type is MatchType.FUZZY_ARTICLE
+
+    def test_fuzzy_code_boost(self) -> None:
+        agg = AggregatedHit(
+            hit=_hit(score=0.5, match_type=MatchType.LEXICAL),
+            lexical=0.5,
+            code_fuzzy=0.8,
+            code_matched="ABC123",
+            levels_hit=[MatchType.LEXICAL],
+        )
+        cand = score_candidate(_input(article_normalized=None), agg, Weights(), rank=1)
+        # 0.5 + 0.12*0.8 = 0.596
+        assert cand.confidence == pytest.approx(0.596)
+        assert cand.explanation.extracted_code_match == "fuzzy"
+
+    def test_code_only_match_low_without_name(self) -> None:
+        # Код совпал, но имя не близко (lexical мал) → остаётся консервативным
+        agg = AggregatedHit(
+            hit=_hit(score=0.1, match_type=MatchType.LEXICAL),
+            lexical=0.1,
+            code_exact=1.0,
+            code_matched="999999",
+            levels_hit=[MatchType.LEXICAL],
+        )
+        cand = score_candidate(_input(article_normalized=None), agg, Weights(), rank=1)
+        # 0.1 + 0.25 = 0.35 — ниже порога «найдено», не ложное авто-подтверждение
+        assert cand.confidence == pytest.approx(0.35)
+
+
+class TestMergeCodeHits:
+    def test_code_only_hit_creates_aggregate(self) -> None:
+        hit = _hit(match_type=MatchType.EXACT_ARTICLE, score=1.0)
+        aggs = merge_hits({}, code_exact_hits=[(hit, "ABC123")])
+        assert len(aggs) == 1
+        assert aggs[0].code_exact == 1.0
+        assert aggs[0].code_matched == "ABC123"
+
+    def test_code_hit_merges_with_lexical(self) -> None:
+        item_id = uuid4()
+        lex = _hit(item_id=item_id, score=0.6, match_type=MatchType.LEXICAL)
+        code = _hit(item_id=item_id, score=1.0, match_type=MatchType.EXACT_ARTICLE)
+        aggs = merge_hits(
+            {MatchType.LEXICAL: [lex]},
+            code_exact_hits=[(code, "X1")],
+        )
+        assert len(aggs) == 1  # тот же item — слиты
+        assert aggs[0].lexical == 0.6
+        assert aggs[0].code_exact == 1.0

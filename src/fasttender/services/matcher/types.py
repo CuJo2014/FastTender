@@ -30,6 +30,10 @@ class MatchInput(BaseModel):
     article: str | None = None
     article_normalized: str | None = None
 
+    # Коды/модели, извлечённые из наименования, когда явной колонки артикула
+    # нет (раздел 9.1, point 2). Матчер пробует их по article каталога.
+    article_candidates: tuple[str, ...] = ()
+
     manufacturer: str | None = None
     manufacturer_normalized: str | None = None
 
@@ -44,12 +48,15 @@ class Explanation(BaseModel):
     `semantic_similarity` всегда 0 в Фазе 1 — заложено на Фазу 2.
     """
 
-    article_match: str = "none"  # none | exact_after_normalization | fuzzy
+    article_match: str = "none"  # none | exact_after_normalization | fuzzy | extracted_code
     article_similarity: float = 0.0
     lexical_score: float = 0.0
     semantic_similarity: float = 0.0
     brand_match: bool = False
     unit_match: bool = False
+    # Код, извлечённый из наименования и совпавший с article каталога (point 2).
+    extracted_code_match: str = "none"  # none | exact | fuzzy
+    extracted_code: str | None = None
     final_score: float
     human_readable: str
     levels_hit: list[MatchType] = Field(default_factory=list)
