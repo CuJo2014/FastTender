@@ -29,5 +29,6 @@ FROM nginx:1.27-alpine AS dist
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Default command для prod: копируем в shared volume и выходим
-CMD ["sh", "-c", "cp -r /usr/share/nginx/html/. /srv/frontend/ && echo 'frontend dist copied'"]
+# Default command для prod: чистим shared volume от старых хешированных
+# бандлов, копируем свежий dist и выходим.
+CMD ["sh", "-c", "find /srv/frontend -mindepth 1 -delete 2>/dev/null; cp -r /usr/share/nginx/html/. /srv/frontend/ && echo 'frontend dist copied'"]
