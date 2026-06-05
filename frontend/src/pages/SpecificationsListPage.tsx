@@ -177,7 +177,7 @@ export function SpecificationsListPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-pink-300 hover:bg-pink-50"
+                        className="!text-pink-300 hover:!bg-pink-50"
                         disabled={
                           deleteMutation.isPending &&
                           deleteMutation.variables === spec.id
