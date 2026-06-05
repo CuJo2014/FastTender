@@ -77,7 +77,10 @@ export function SpecItemRow({
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
           {chosen ? (
             <div className="text-sm">
-              <div className="line-clamp-1 font-medium text-emerald-700">
+              <div
+                className="line-clamp-2 font-medium text-emerald-700"
+                title={chosen.name}
+              >
                 {chosen.name}
               </div>
               <div className="text-xs text-slate-500">
@@ -86,7 +89,9 @@ export function SpecItemRow({
             </div>
           ) : topCatalog ? (
             <div className="text-sm">
-              <div className="line-clamp-1">{topCatalog.name}</div>
+              <div className="line-clamp-2" title={topCatalog.name}>
+                {topCatalog.name}
+              </div>
               <div className="text-xs text-slate-500">
                 {topCatalog.article}
               </div>
