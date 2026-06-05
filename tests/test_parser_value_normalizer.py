@@ -6,11 +6,47 @@ import pytest
 
 from fasttender.services.parser.value_normalizer import (
     clean_string,
+    extract_article_candidates,
     normalize_article,
     normalize_name,
     parse_decimal,
     parse_int,
 )
+
+
+class TestExtractArticleCandidates:
+    def test_long_numeric_sku_extracted(self) -> None:
+        # «Tarkett 91928» — 91928 это SKU (≥5 цифр)
+        assert "91928" in extract_article_candidates("Шнур для сварки ПВХ 4мм Tarkett 91928")
+
+    def test_alphanumeric_model_extracted(self) -> None:
+        cands = extract_article_candidates("Пылесос Einhell TE-VC 2340 SA 2342380")
+        assert "2342380" in cands  # длинный SKU (≥5 цифр)
+        # «TE-VC» без цифры и «2340» (4 цифры) — консервативно НЕ берём
+        assert "TEVC" not in cands
+
+    def test_alphanumeric_with_digit_extracted(self) -> None:
+        # токен с буквами И цифрой («КЭВ-32M3») — это модель
+        cands = extract_article_candidates("Тепловентилятор КЭВ-32M3")
+        assert "КЭВ32M3" in cands
+
+    def test_dimensions_not_extracted(self) -> None:
+        # «200мм», «4мм» — размерности, не артикулы
+        assert extract_article_candidates("Плоскогубцы комбинированные 200мм") == []
+        assert extract_article_candidates("Кабель 4мм сечение") == []
+
+    def test_short_pure_number_not_extracted(self) -> None:
+        # короткое число (<5 цифр) без букв — это размер/количество
+        assert extract_article_candidates("Уголок 250 штук") == []
+
+    def test_pure_text_no_candidates(self) -> None:
+        assert extract_article_candidates("Штангенциркуль металлический") == []
+        assert extract_article_candidates("") == []
+        assert extract_article_candidates(None) == []
+
+    def test_dedup_and_order(self) -> None:
+        cands = extract_article_candidates("Деталь M12 крепёж M12 модель ABC123")
+        assert cands == ["M12", "ABC123"]  # уникальные, в порядке появления
 
 
 class TestCleanString:

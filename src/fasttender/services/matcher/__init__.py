@@ -116,7 +116,30 @@ class MatchingEngine:
             if lex_hits:
                 per_level[MatchType.LEXICAL] = lex_hits
 
-        return self._assemble_result(input_, per_level, top_n=top_n)
+        # --- Point 2: коды/модели, извлечённые из наименования ---
+        # Только когда нет явного артикула (иначе его и так ищем выше).
+        code_exact_hits: list[tuple[SearchHit, str]] = []
+        code_fuzzy_hits: list[tuple[SearchHit, str]] = []
+        if not input_.article_normalized:
+            for code in input_.article_candidates:
+                exact = await self._repo.search_by_article(
+                    code, exact=True, source_filter=source_filter, limit=pool_limit
+                )
+                if exact:
+                    code_exact_hits.extend((h, code) for h in exact)
+                    continue
+                fuzzy = await self._repo.search_by_article(
+                    code, exact=False, source_filter=source_filter, limit=pool_limit
+                )
+                code_fuzzy_hits.extend((h, code) for h in fuzzy)
+
+        return self._assemble_result(
+            input_,
+            per_level,
+            code_exact_hits=code_exact_hits,
+            code_fuzzy_hits=code_fuzzy_hits,
+            top_n=top_n,
+        )
 
     async def match_many(
         self,
@@ -143,12 +166,18 @@ class MatchingEngine:
         input_: MatchInput,
         per_level: dict[MatchType, list[SearchHit]],
         *,
+        code_exact_hits: list[tuple[SearchHit, str]] | None = None,
+        code_fuzzy_hits: list[tuple[SearchHit, str]] | None = None,
         top_n: int,
     ) -> MatchResult:
-        if not per_level:
+        if not per_level and not code_exact_hits and not code_fuzzy_hits:
             return MatchResult(spec_item_line=input_.line_number)
 
-        aggregated = merge_hits(per_level)
+        aggregated = merge_hits(
+            per_level,
+            code_exact_hits=code_exact_hits,
+            code_fuzzy_hits=code_fuzzy_hits,
+        )
         scored = [score_candidate(input_, agg, self._weights) for agg in aggregated]
         scored.sort(key=lambda c: c.confidence, reverse=True)
 

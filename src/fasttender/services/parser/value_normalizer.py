@@ -68,6 +68,52 @@ def normalize_name(value: Any) -> str | None:
     return s.lower()
 
 
+# Хвост-единица измерения/размерность — такие токены НЕ артикулы
+# («200мм», «4мм», «32вт»). Проверяем окончание токена.
+_DIM_SUFFIX_RE = re.compile(
+    r"(мм|см|дм|км|м|кг|гр|г|мг|т|л|мл|шт|компл|уп|вт|квт|в|ма|а|гц)$",
+    re.IGNORECASE,
+)
+
+
+def extract_article_candidates(name: Any) -> list[str]:
+    """Вытаскивает из наименования токены, похожие на артикул/модель.
+
+    Клиентские спеки часто без отдельной колонки артикула, но код/модель
+    зашиты в текст имени: «Шнур ... Tarkett 91928», «Пылесос Einhell TE-VC
+    2340 SA 2342380». Такие токены можно сопоставить с `article` каталога
+    (уровни 1/2), чтобы поднять confidence (раздел 9.1).
+
+    Токен считается кандидатом, если содержит цифру и при этом:
+      - буквенно-цифровой (модель: «TE-VC», «КЭВ-32M3», «M12») длиной ≥ 3, ИЛИ
+      - чисто-цифровой длиной ≥ 5 (SKU; короткие числа — это размеры/кол-во).
+    Размерности с единицей («200мм», «4мм») отбрасываются.
+
+    Возвращает нормализованные (как `normalize_article`) уникальные коды,
+    в порядке появления.
+    """
+    s = clean_string(name)
+    if s is None:
+        return []
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw_token in re.split(r"[\s,;()\[\]]+", s):
+        token = raw_token.strip(" .,:;")
+        if not token or not any(ch.isdigit() for ch in token):
+            continue
+        if _DIM_SUFFIX_RE.search(token):
+            continue  # размерность/единица, не артикул
+        has_alpha = any(ch.isalpha() for ch in token)
+        digit_count = sum(ch.isdigit() for ch in token)
+        if not has_alpha and digit_count < 5:
+            continue  # короткое число — размер/количество, не SKU
+        normalized = normalize_article(token)
+        if normalized and len(normalized) >= 3 and normalized not in seen:
+            seen.add(normalized)
+            candidates.append(normalized)
+    return candidates
+
+
 def parse_decimal(value: Any) -> Decimal | None:
     """Извлекает Decimal из произвольного значения.
 

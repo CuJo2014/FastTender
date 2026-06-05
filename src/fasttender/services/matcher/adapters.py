@@ -7,6 +7,7 @@
 from fasttender.models import SpecItem
 from fasttender.services.matcher.types import MatchInput
 from fasttender.services.parser.value_normalizer import (
+    extract_article_candidates,
     normalize_article,
     normalize_name,
 )
@@ -29,12 +30,19 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         spec_item.manufacturer_raw.lower().strip() if spec_item.manufacturer_raw else None
     )
 
+    # Если явного артикула нет — пробуем вытащить код/модель из наименования
+    # (point 2). При наличии явного артикула это не нужно: его и так ищем.
+    article_candidates = (
+        () if article_norm else tuple(extract_article_candidates(spec_item.name_raw))
+    )
+
     return MatchInput(
         line_number=spec_item.line_number,
         name=spec_item.name_raw,
         name_normalized=name_norm,
         article=spec_item.article_raw,
         article_normalized=article_norm,
+        article_candidates=article_candidates,
         manufacturer=spec_item.manufacturer_raw,
         manufacturer_normalized=manufacturer_norm,
         unit=spec_item.unit_raw,
