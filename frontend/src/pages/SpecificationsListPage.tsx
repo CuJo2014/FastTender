@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
@@ -6,8 +7,25 @@ import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader } from "../components/ui/Card";
 
+const MATCH_STATS_STORAGE_KEY = "specs.matchStatsVisible";
+
 export function SpecificationsListPage() {
   const queryClient = useQueryClient();
+
+  // Видимость группы колонок «Показатели матчинга» (≥90% / 50–90% / Не найдено).
+  // Запоминаем выбор пользователя между сессиями.
+  const [showMatchStats, setShowMatchStats] = useState<boolean>(() => {
+    const saved = localStorage.getItem(MATCH_STATS_STORAGE_KEY);
+    return saved === null ? true : saved === "1";
+  });
+  const toggleMatchStats = () => {
+    setShowMatchStats((prev) => {
+      const next = !prev;
+      localStorage.setItem(MATCH_STATS_STORAGE_KEY, next ? "1" : "0");
+      return next;
+    });
+  };
+
   const { data, isLoading, error } = useQuery({
     queryKey: ["specifications"],
     queryFn: api.listSpecifications,
@@ -43,9 +61,20 @@ export function SpecificationsListPage() {
         title="Спецификации"
         description="Загруженные клиентские спецификации и результаты обработки"
         actions={
-          <Link to="/specifications/upload">
-            <Button variant="primary">Загрузить</Button>
-          </Link>
+          <div className="flex items-center gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+                checked={showMatchStats}
+                onChange={toggleMatchStats}
+              />
+              Показатели матчинга
+            </label>
+            <Link to="/specifications/upload">
+              <Button variant="primary">Загрузить</Button>
+            </Link>
+          </div>
         }
       />
 
@@ -78,16 +107,21 @@ export function SpecificationsListPage() {
                 <th className="px-6 py-3 font-medium">Файл</th>
                 <th className="px-6 py-3 font-medium">Клиент</th>
                 <th className="px-6 py-3 font-medium">Статус</th>
-                <th className="px-6 py-3 font-medium text-right">Всего</th>
-                <th className="px-6 py-3 font-medium text-right text-conf-high">
-                  ≥ 90%
-                </th>
-                <th className="px-6 py-3 font-medium text-right text-conf-medium">
-                  50–90%
-                </th>
-                <th className="px-6 py-3 font-medium text-right text-conf-low">
-                  Не найдено
-                </th>
+                <th className="px-6 py-3 font-medium text-right">Позиций</th>
+                <th className="px-6 py-3 font-medium text-right">Указано</th>
+                {showMatchStats && (
+                  <>
+                    <th className="px-6 py-3 font-medium text-right text-conf-high">
+                      ≥ 90%
+                    </th>
+                    <th className="px-6 py-3 font-medium text-right text-conf-medium">
+                      50–90%
+                    </th>
+                    <th className="px-6 py-3 font-medium text-right text-conf-low">
+                      Не найдено
+                    </th>
+                  </>
+                )}
                 <th className="px-6 py-3 font-medium">Загружена</th>
                 <th className="px-6 py-3" />
               </tr>
@@ -114,15 +148,22 @@ export function SpecificationsListPage() {
                   <td className="px-6 py-3 text-right tabular-nums">
                     {spec.counts.items_total}
                   </td>
-                  <td className="px-6 py-3 text-right tabular-nums text-conf-high">
-                    {spec.counts.items_matched_high}
+                  <td className="px-6 py-3 text-right tabular-nums">
+                    {spec.counts.items_verified}
                   </td>
-                  <td className="px-6 py-3 text-right tabular-nums text-conf-medium">
-                    {spec.counts.items_matched_medium}
-                  </td>
-                  <td className="px-6 py-3 text-right tabular-nums text-conf-low">
-                    {spec.counts.items_not_found}
-                  </td>
+                  {showMatchStats && (
+                    <>
+                      <td className="px-6 py-3 text-right tabular-nums text-conf-high">
+                        {spec.counts.items_matched_high}
+                      </td>
+                      <td className="px-6 py-3 text-right tabular-nums text-conf-medium">
+                        {spec.counts.items_matched_medium}
+                      </td>
+                      <td className="px-6 py-3 text-right tabular-nums text-conf-low">
+                        {spec.counts.items_not_found}
+                      </td>
+                    </>
+                  )}
                   <td className="px-6 py-3 text-slate-500">
                     {formatDateTime(spec.created_at)}
                   </td>
