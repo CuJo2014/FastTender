@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: "/suppliers", label: "Поставщики" },
   { to: "/clients", label: "Клиенты" },
   { to: "/trading-platforms", label: "Площадки" },
+  { to: "/gold-dataset", label: "Gold dataset" },
 ];
 
 export function AppLayout() {

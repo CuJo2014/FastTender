@@ -13,6 +13,7 @@ interface Props {
     chosenItemId?: string | null,
   ) => void;
   onUnverify?: (specItemId: string) => void;
+  onAddToGold?: (specItemId: string) => void;
   pending: boolean;
   defaultExpanded?: boolean;
   /** px-смещение для «прилипания» строки при разворачивании (под шапкой). */
@@ -23,6 +24,7 @@ export function SpecItemRow({
   item,
   onVerify,
   onUnverify,
+  onAddToGold,
   pending,
   defaultExpanded = false,
   stickyTop = 0,
@@ -151,6 +153,21 @@ export function SpecItemRow({
                     disabled={pending}
                   >
                     ↺ Сбросить решение
+                  </Button>
+                )}
+                {onAddToGold && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={
+                      (item.verification ? "" : "mr-auto ") +
+                      "text-amber-800 hover:bg-amber-50"
+                    }
+                    onClick={() => onAddToGold(item.id)}
+                    disabled={pending}
+                    title="Добавить строку в золотой датасет (эталон берётся из выбранной позиции)"
+                  >
+                    ★ в gold dataset
                   </Button>
                 )}
                 <Button

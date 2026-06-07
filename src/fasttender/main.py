@@ -10,6 +10,7 @@ from fasttender import __version__
 from fasttender.api.routes import (
     catalog,
     clients,
+    gold,
     health,
     items,
     specifications,
@@ -61,6 +62,7 @@ def create_app() -> FastAPI:
     app.include_router(clients.router, prefix=api_prefix)
     app.include_router(trading_platforms.router, prefix=api_prefix)
     app.include_router(items.router, prefix=api_prefix)
+    app.include_router(gold.router, prefix=api_prefix)
 
     return app
 

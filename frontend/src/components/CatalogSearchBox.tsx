@@ -6,11 +6,18 @@ import { Button } from "./ui/Button";
 
 interface Props {
   onPick: (itemId: string) => void;
+  /** Дополнительно отдаёт всю карточку результата (для отображения выбора). */
+  onPickResult?: (result: CatalogSearchResult) => void;
   disabled?: boolean;
   initialQuery?: string;
 }
 
-export function CatalogSearchBox({ onPick, disabled, initialQuery }: Props) {
+export function CatalogSearchBox({
+  onPick,
+  onPickResult,
+  disabled,
+  initialQuery,
+}: Props) {
   // Предзаполняем именем позиции — видно, что ищем, и поиск в один клик.
   const [query, setQuery] = useState(initialQuery ?? "");
   const [results, setResults] = useState<CatalogSearchResult[]>([]);
@@ -117,7 +124,10 @@ export function CatalogSearchBox({ onPick, disabled, initialQuery }: Props) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => onPick(r.item_id)}
+                    onClick={() => {
+                      onPick(r.item_id);
+                      onPickResult?.(r);
+                    }}
                     disabled={disabled}
                   >
                     Выбрать

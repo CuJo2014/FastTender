@@ -52,3 +52,17 @@ class VerificationDecision(StrEnum):
     REJECTED = "rejected"
     NOT_FOUND = "not_found"
     NEW_ITEM_REQUESTED = "new_item_requested"
+
+
+class GoldLabelStatus(StrEnum):
+    """Статус разметки строки золотого датасета (раздел 15.4, 16.3).
+
+    Значения совпадают со строками, которые читает `eval_gold.py`
+    (STATUS_FOUND / STATUS_ANALOG / STATUS_NOT_FOUND / STATUS_UNSURE), чтобы
+    экспорт в Excel-шаблон не требовал преобразования.
+    """
+
+    FOUND = "найдено"
+    ANALOG = "аналог"
+    NOT_FOUND = "не найдено"
+    UNSURE = "сомнительно"

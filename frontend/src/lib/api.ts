@@ -10,6 +10,11 @@ import type {
   TradingPlatformCreate,
   TradingPlatformRead,
   CatalogSearchResult,
+  GoldRowCreate,
+  GoldRowFromSpecItem,
+  GoldRowRead,
+  GoldRowUpdate,
+  GoldLabelStatus,
   ImportMode,
   ImportReport,
   PaginatedSpecItems,
@@ -213,6 +218,30 @@ export const api = {
     }
     return (await response.json()) as ImportReport;
   },
+
+  // --- Gold dataset ---
+
+  listGoldRows: (status?: GoldLabelStatus) =>
+    request<GoldRowRead[]>(
+      `/gold-rows/${status ? `?label_status=${encodeURIComponent(status)}` : ""}`,
+    ),
+
+  createGoldRow: (payload: GoldRowCreate) =>
+    request<GoldRowRead>("/gold-rows/", { method: "POST", json: payload }),
+
+  createGoldRowFromSpecItem: (payload: GoldRowFromSpecItem) =>
+    request<GoldRowRead>("/gold-rows/from-spec-item", {
+      method: "POST",
+      json: payload,
+    }),
+
+  updateGoldRow: (id: string, payload: GoldRowUpdate) =>
+    request<GoldRowRead>(`/gold-rows/${id}`, { method: "PATCH", json: payload }),
+
+  deleteGoldRow: (id: string) =>
+    request<void>(`/gold-rows/${id}`, { method: "DELETE" }),
+
+  goldExportUrl: () => `${BASE}/gold-rows/export.xlsx`,
 
   // --- Suppliers ---
 

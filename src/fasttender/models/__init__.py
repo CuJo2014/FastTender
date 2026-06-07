@@ -6,10 +6,12 @@ from fasttender.models.data_source import DataSource
 from fasttender.models.enums import (
     DataSourceStatus,
     DataSourceType,
+    GoldLabelStatus,
     MatchType,
     SpecificationStatus,
     VerificationDecision,
 )
+from fasttender.models.gold_row import GoldRow
 from fasttender.models.item import Item
 from fasttender.models.match_candidate import MatchCandidate
 from fasttender.models.spec_item import SpecItem
@@ -24,6 +26,8 @@ __all__ = [
     "DataSource",
     "DataSourceStatus",
     "DataSourceType",
+    "GoldLabelStatus",
+    "GoldRow",
     "Item",
     "MatchCandidate",
     "MatchType",

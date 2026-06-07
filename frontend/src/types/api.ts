@@ -220,6 +220,62 @@ export interface AutoConfirmResponse {
   threshold_used: number;
 }
 
+// --- Gold dataset ---
+
+export type GoldLabelStatus =
+  | "найдено"
+  | "аналог"
+  | "не найдено"
+  | "сомнительно";
+
+export interface GoldRowRead {
+  id: string;
+  source_file: string | null;
+  name: string;
+  article: string | null;
+  manufacturer: string | null;
+  attributes: string | null;
+  quantity: number | null;
+  unit: string | null;
+  expected_article: string | null;
+  expected_code_1c: string | null;
+  expected_name: string | null;
+  expected_item_id: string | null;
+  label_status: GoldLabelStatus;
+  labeler_notes: string | null;
+  spec_item_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GoldRowCreate {
+  source_file?: string | null;
+  name: string;
+  article?: string | null;
+  manufacturer?: string | null;
+  attributes?: string | null;
+  quantity?: number | null;
+  unit?: string | null;
+  expected_article?: string | null;
+  expected_code_1c?: string | null;
+  expected_name?: string | null;
+  expected_item_id?: string | null;
+  label_status: GoldLabelStatus;
+  labeler_notes?: string | null;
+  spec_item_id?: string | null;
+}
+
+export type GoldRowUpdate = Partial<Omit<GoldRowCreate, "name">> & {
+  name?: string;
+};
+
+export interface GoldRowFromSpecItem {
+  spec_item_id: string;
+  expected_item_id?: string | null;
+  label_status?: GoldLabelStatus | null;
+  labeler_notes?: string | null;
+}
+
 // --- Import (catalog + pricelist) ---
 
 export type ImportMode = "replace" | "merge";
