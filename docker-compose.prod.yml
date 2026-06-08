@@ -150,6 +150,9 @@ services:
       # bcrypt-хеш пароля basic auth, формат «логин пароль_bcrypt»
       BASIC_AUTH_USER: ${BASIC_AUTH_USER:-fasttender}
       BASIC_AUTH_HASH: ${BASIC_AUTH_HASH}
+      # Второй пользователь (если заданы обе — попадают в basic_auth)
+      BASIC_AUTH_USER2: ${BASIC_AUTH_USER2}
+      BASIC_AUTH_HASH2: ${BASIC_AUTH_HASH2}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - frontend_dist:/srv/frontend:ro

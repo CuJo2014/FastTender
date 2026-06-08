@@ -5,6 +5,8 @@
 #   CADDY_EMAIL      — email для Let's Encrypt
 #   BASIC_AUTH_USER  — логин для доступа
 #   BASIC_AUTH_HASH  — bcrypt-хеш пароля (генерируется deploy/bootstrap.sh)
+#   BASIC_AUTH_USER2 — второй логин (опционально, но если задан Caddyfile
+#   BASIC_AUTH_HASH2   ждёт обе переменные — иначе пустая пара ломает парсинг)
 #
 # Поведение:
 #   - HTTP → HTTPS редирект (Caddy делает автоматически при наличии TLS).
@@ -29,6 +31,7 @@
 	# --- Basic auth ---
 	basic_auth {
 		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+		{$BASIC_AUTH_USER2} {$BASIC_AUTH_HASH2}
 	}
 
 	# --- Безопасность ---
