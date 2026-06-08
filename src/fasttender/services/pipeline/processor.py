@@ -119,8 +119,15 @@ class SpecificationProcessor:
             warnings=len(parse_result.warnings),
         )
 
+    # Прогресс матчинга коммитим/обновляем раз в BATCH строк: реже коммитов —
+    # меньше нагрузки, но полоса в UI обновляется достаточно плавно.
+    _PROGRESS_BATCH = 20
+
     async def _match_all(self, spec: Specification) -> None:
         await self._transition(spec, SpecificationStatus.MATCHING)
+        # Сброс прогресса на входе (важно для retry — parse уже пересоздал строки)
+        spec.matched_count = 0
+        await self._session.commit()
 
         # Подгружаем свежие SpecItem (после parse сессия их видит)
         spec_items = (
@@ -129,10 +136,19 @@ class SpecificationProcessor:
             )
         ).all()
 
+        processed = 0
         for spec_item in spec_items:
             match_input = match_input_from_spec_item(spec_item)
             result = await self._matcher.match(match_input, top_n=self._top_n)
             self._persist_candidates(spec_item.id, result)
+            processed += 1
+            # Батч-коммит: фиксируем кандидатов + прогресс (результаты «текут»
+            # в UI по мере матчинга, полоса показывает честный %).
+            if processed % self._PROGRESS_BATCH == 0:
+                spec.matched_count = processed
+                await self._session.commit()
+
+        spec.matched_count = processed
 
         # После матчинга — REVIEWING (требует верификации). Раньше ставили
         # MATCHED со словом «Готов» — это путало менеджеров (UX-фидбэк

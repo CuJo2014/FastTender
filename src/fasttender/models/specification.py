@@ -4,7 +4,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -63,6 +63,12 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     error_message: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     meta: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    # Прогресс матчинга: сколько строк уже обработано матчером (для % в UI).
+    # Обновляется батчами в pipeline._match_all; знаменатель — число SpecItem.
+    matched_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

@@ -58,6 +58,7 @@ export interface SpecificationRead {
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
+  matched_count: number;
   counts: SpecificationCounts;
 }
 

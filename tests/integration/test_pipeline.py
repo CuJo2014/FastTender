@@ -103,6 +103,8 @@ async def test_happy_path_processes_spec_end_to_end(
     assert spec.status is SpecificationStatus.REVIEWING
     assert spec.completed_at is not None
     assert spec.error_message is None
+    # Прогресс матчинга доведён до 100% (= числу строк)
+    assert spec.matched_count == 3
 
     # Создались SpecItem
     spec_items = (

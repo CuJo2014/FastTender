@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { formatDateTime, statusLabel, statusTone, isInProgress } from "../lib/format";
 import { Badge } from "../components/ui/Badge";
+import { ProgressBar } from "../components/ProgressBar";
 import { Button } from "../components/ui/Button";
 import { Card, CardHeader } from "../components/ui/Card";
 
@@ -141,9 +142,15 @@ export function SpecificationsListPage() {
                     {spec.client_name ?? "—"}
                   </td>
                   <td className="px-6 py-3">
-                    <Badge tone={statusTone(spec.status)}>
-                      {statusLabel(spec.status)}
-                    </Badge>
+                    {isInProgress(spec.status) ? (
+                      <div className="min-w-40 max-w-56">
+                        <ProgressBar spec={spec} />
+                      </div>
+                    ) : (
+                      <Badge tone={statusTone(spec.status)}>
+                        {statusLabel(spec.status)}
+                      </Badge>
+                    )}
                   </td>
                   <td className="px-6 py-3 text-right tabular-nums">
                     {spec.counts.items_total}

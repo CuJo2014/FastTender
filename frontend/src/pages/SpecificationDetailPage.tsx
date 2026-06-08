@@ -8,6 +8,7 @@ import type {
   VerificationDecision,
 } from "../types/api";
 import { Badge } from "../components/ui/Badge";
+import { ProgressBar } from "../components/ProgressBar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { SpecItemRow } from "../components/SpecItemRow";
@@ -182,6 +183,12 @@ function DetailContent({ specId }: { specId: string }) {
               </Badge>
             </div>
           </div>
+
+          {isInProgress(spec.status) && (
+            <div className="basis-full sm:max-w-md">
+              <ProgressBar spec={spec} />
+            </div>
+          )}
 
           <div>
             <div className="text-xs uppercase text-slate-500">Клиент</div>

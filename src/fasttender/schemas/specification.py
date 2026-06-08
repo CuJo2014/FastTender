@@ -47,6 +47,8 @@ class SpecificationRead(BaseModel):
     error_message: str | None = None
     created_at: datetime
     completed_at: datetime | None = None
+    # Прогресс матчинга: строк обработано (знаменатель — counts.items_total)
+    matched_count: int = 0
     counts: SpecificationCounts = Field(default_factory=SpecificationCounts)
 
 
