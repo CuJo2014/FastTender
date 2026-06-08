@@ -119,9 +119,11 @@ class SpecificationProcessor:
             warnings=len(parse_result.warnings),
         )
 
-    # Прогресс матчинга коммитим/обновляем раз в BATCH строк: реже коммитов —
-    # меньше нагрузки, но полоса в UI обновляется достаточно плавно.
-    _PROGRESS_BATCH = 20
+    # Прогресс матчинга коммитим раз в BATCH строк. =1 → после каждой строки:
+    # матчинг ~0.8с/строку (упирается в pg_trgm-поиск по каталогу), поэтому
+    # накладные на коммит ничтожны, зато полоса в UI едет плавно даже на
+    # коротких спеках (4–5 строк). Поднять >1, если каталог/нагрузка вырастут.
+    _PROGRESS_BATCH = 1
 
     async def _match_all(self, spec: Specification) -> None:
         await self._transition(spec, SpecificationStatus.MATCHING)
