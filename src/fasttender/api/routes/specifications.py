@@ -123,7 +123,10 @@ async def upload_specification(
     # вернёт 202 — обработка просто начнётся позже после поднятия воркера
     # (повторный enqueue см. POST /retry в Phase 2).
     try:
-        process_specification.delay(str(spec.id))
+        async_result = process_specification.delay(str(spec.id))
+        # Сохраняем Celery task_id — нужен для прерывания обработки (POST /abort).
+        spec.meta = {**(spec.meta or {}), "task_id": async_result.id}
+        await session.commit()
     except Exception:
         # Логируем, но не валим запрос — пользователь увидит status=uploaded
         # и сможет вручную перезапустить из UI
@@ -557,6 +560,61 @@ async def cancel_specification(
     await session.refresh(spec)
     counts = await _compute_counts(session, spec.id)
     return SpecificationRead.model_validate({**spec.__dict__, "counts": counts})
+
+
+_IN_PROGRESS_STATUSES = frozenset(
+    {
+        SpecificationStatus.UPLOADED,
+        SpecificationStatus.PARSING,
+        SpecificationStatus.PARSED,
+        SpecificationStatus.MATCHING,
+    }
+)
+
+
+@router.post(
+    "/{spec_id}/abort",
+    response_model=SpecificationRead,
+    summary="Прервать обработку (остановить парсинг/матчинг)",
+)
+async def abort_specification(
+    spec_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> SpecificationRead:
+    """Останавливает фоновую Celery-задачу и помечает спеку прерванной.
+
+    В отличие от /cancel (бизнес-отказ от поставки) — именно прекращает
+    работу парсера/матчера. Частичные результаты, уже закоммиченные
+    батчами, остаются (миграция 0015).
+    """
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+    if spec.status not in _IN_PROGRESS_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Спецификация не в обработке — прерывать нечего"},
+        )
+
+    task_id = (spec.meta or {}).get("task_id")
+    if task_id:
+        try:
+            from fasttender.core.celery_app import celery_app
+
+            # terminate=True шлёт SIGTERM воркер-процессу задачи (prefork
+            # переживёт). Брокер недоступен → graceful: статус всё равно ставим.
+            celery_app.control.revoke(task_id, terminate=True, signal="SIGTERM")
+        except Exception:
+            pass
+
+    spec.status = SpecificationStatus.CANCELLED
+    spec.error_message = "Обработка прервана пользователем"
+    await session.commit()
+    await session.refresh(spec)
+    return await _spec_read(session, spec)
 
 
 @router.post(

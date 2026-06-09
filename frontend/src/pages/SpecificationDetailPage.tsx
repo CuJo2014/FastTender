@@ -184,12 +184,6 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           </div>
 
-          {isInProgress(spec.status) && (
-            <div className="basis-full sm:max-w-md">
-              <ProgressBar spec={spec} />
-            </div>
-          )}
-
           <div>
             <div className="text-xs uppercase text-slate-500">Клиент</div>
             <div className="mt-1">
@@ -236,6 +230,15 @@ function DetailContent({ specId }: { specId: string }) {
           </div>
 
           <CancelButton specId={specId} status={spec.status} />
+
+          {isInProgress(spec.status) && (
+            <div className="flex basis-full items-center gap-4">
+              <div className="flex-1">
+                <ProgressBar spec={spec} />
+              </div>
+              <AbortButton specId={specId} />
+            </div>
+          )}
         </CardBody>
       </Card>
       </div>
@@ -682,6 +685,37 @@ function Req({
         className="rounded border border-slate-300 px-2 py-1 text-sm"
       />
     </label>
+  );
+}
+
+function AbortButton({ specId }: { specId: string }) {
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => api.abortSpecification(specId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({ queryKey: ["specifications"] });
+    },
+    onError: (e) =>
+      window.alert(
+        e instanceof ApiError ? `Ошибка ${e.status}` : "Не удалось прервать",
+      ),
+  });
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="shrink-0 text-red-600 hover:bg-red-50"
+      onClick={() => {
+        if (window.confirm("Прервать обработку этой спецификации?")) {
+          mutation.mutate();
+        }
+      }}
+      disabled={mutation.isPending}
+      title="Остановить парсинг/матчинг"
+    >
+      {mutation.isPending ? "Прерываю…" : "⊗ Прервать"}
+    </Button>
   );
 }
 

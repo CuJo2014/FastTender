@@ -134,6 +134,12 @@ export const api = {
       { method: "POST", json: { reason: reason ?? null } },
     ),
 
+  abortSpecification: (specId: string) =>
+    request<SpecificationRead>(
+      `/specifications/${specId}/abort`,
+      { method: "POST" },
+    ),
+
   deleteSpecification: (specId: string) =>
     request<void>(`/specifications/${specId}`, { method: "DELETE" }),
 

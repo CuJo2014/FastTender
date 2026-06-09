@@ -20,7 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from fasttender.core.celery_app import celery_app
 from fasttender.core.config import get_settings
 from fasttender.main import create_app
-from fasttender.models import DataSource, DataSourceType, Item, SpecItem
+from fasttender.models import (
+    DataSource,
+    DataSourceType,
+    Item,
+    Specification,
+    SpecificationStatus,
+    SpecItem,
+)
 from fasttender.services.importer import CatalogImporter, ImportMode
 from tests.fixtures.spec_builders import make_xlsx
 from tests.integration.conftest import TEST_DB_URL
@@ -420,3 +427,50 @@ async def test_list_specifications_returns_recent_first(
     assert len(items) == 3
     ids_returned = [i["id"] for i in items]
     assert set(ids_returned) == set(spec_ids)
+
+
+# --- POST /specifications/{id}/abort ---
+
+
+async def test_abort_in_progress_marks_cancelled(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    spec = Specification(
+        source_filename="m.xlsx",
+        storage_path="/tmp/m.xlsx",
+        status=SpecificationStatus.MATCHING,
+        meta={},
+    )
+    committed_db.add(spec)
+    await committed_db.commit()
+
+    r = await client.post(f"/api/v1/specifications/{spec.id}/abort")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "cancelled"
+    assert "прервана" in (body["error_message"] or "").lower()
+
+
+async def test_abort_terminal_spec_409(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    spec = Specification(
+        source_filename="r.xlsx",
+        storage_path="/tmp/r.xlsx",
+        status=SpecificationStatus.REVIEWING,
+        meta={},
+    )
+    committed_db.add(spec)
+    await committed_db.commit()
+
+    r = await client.post(f"/api/v1/specifications/{spec.id}/abort")
+    assert r.status_code == 409
+
+
+async def test_abort_unknown_404(client: AsyncClient, committed_db: AsyncSession) -> None:
+    r = await client.post(
+        "/api/v1/specifications/00000000-0000-0000-0000-000000000000/abort"
+    )
+    assert r.status_code == 404
