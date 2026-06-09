@@ -12,18 +12,44 @@ from typing import Any
 # Неразрывный пробел и прочая «невидимая» нечисть, которая ломает int()/Decimal()
 _INVISIBLE_CHARS = (" ", " ", " ", "​", "﻿")
 
-# Распознавание числа в свободном тексте: опциональный знак ≈/~/±, число, опциональный хвост («шт», «м», …)
-# Захватываем первое же число в строке. Для интервалов «10-12» берём левую границу.
-_NUMBER_RE = re.compile(
-    r"""
-    (?:[≈~±]\s*)?              # необязательный модификатор «приблизительно»
-    ([+-]?\d{1,3}(?:[  ]?\d{3})*  # целая часть с разделителями тысяч (пробел или nbsp)
-       (?:[.,]\d+)?            # необязательная дробная часть с . или ,
-       |
-       [+-]?[.,]\d+)           # либо число без целой части типа ",5"
-    """,
-    re.VERBOSE,
-)
+# Пробельные символы — разделители тысяч (обычный, nbsp, narrow-nbsp, thin).
+_THOUSANDS_SPACES = ("\u00a0", "\u202f", "\u2009", " ")
+_SPACE_CLASS = "".join(_THOUSANDS_SPACES)
+
+# Опциональный знак ≈/~/±, затем «число-подобный» прогон (цифры + разделители-
+# тысяч + . ,), оканчивающийся цифрой. Для интервалов «10-12» дефис обрывает
+# прогон → берём левую границу. Локаль разбирается в _normalize_number_token,
+# а не регэкспом — иначе «1234» резалось до «123».
+_NUMBER_RE = re.compile(rf"(?:[≈~±]\s*)?([+-]?[\d{_SPACE_CLASS}.,]*\d)")
+
+
+def _normalize_number_token(token: str) -> str | None:
+    """Нормализует сырой числовой токен к строке для Decimal.
+
+    Разделители: есть И «,» И «.» → правый десятичный, другой тысячи
+    («1,234.56»→«1234.56», «1.234,56»→«1234.56»); только «,» → одна = десятичная,
+    несколько = тысячи; только «.» → одна десятичная, несколько = тысячи;
+    пробелы/nbsp всегда тысячи.
+    """
+    for ch in _THOUSANDS_SPACES:
+        token = token.replace(ch, "")
+    sign = ""
+    if token[:1] in "+-":
+        sign, token = token[0], token[1:]
+    if not token:
+        return None
+    has_comma = "," in token
+    has_dot = "." in token
+    if has_comma and has_dot:
+        if token.rfind(",") > token.rfind("."):
+            token = token.replace(".", "").replace(",", ".")
+        else:
+            token = token.replace(",", "")
+    elif has_comma:
+        token = token.replace(",", ".") if token.count(",") == 1 else token.replace(",", "")
+    elif has_dot and token.count(".") > 1:
+        token = token.replace(".", "")
+    return (sign + token) or None
 
 
 def clean_string(value: Any) -> str | None:
@@ -168,11 +194,11 @@ def parse_decimal(value: Any) -> Decimal | None:
     if not match:
         return None
 
-    raw = match.group(1)
-    # Убираем разделители тысяч (пробелы), запятую заменяем на точку
-    cleaned = raw.replace(" ", "").replace(" ", "").replace(",", ".")
+    token = _normalize_number_token(match.group(1))
+    if token is None:
+        return None
     try:
-        return Decimal(cleaned)
+        return Decimal(token)
     except InvalidOperation:
         return None
 
