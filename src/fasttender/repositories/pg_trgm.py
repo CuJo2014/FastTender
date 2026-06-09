@@ -146,6 +146,55 @@ class PgTrgmSearchRepository(SearchRepository):
         rows = (await self._session.execute(stmt, params)).mappings().all()
         return [_row_to_hit(row, MatchType.LEXICAL) for row in rows]
 
+    async def search_by_code_in_name(
+        self,
+        code: str,
+        *,
+        source_filter: SourceFilter | None = None,
+        limit: int = 10,
+    ) -> list[SearchHit]:
+        if not code:
+            return []
+        # name_normalized уже lowercase; ILIKE по подстроке использует тот же
+        # GIN trgm-индекс (gin_trgm_ops поддерживает LIKE/ILIKE).
+        params: dict[str, Any] = {"pat": f"%{code.lower()}%", "limit": limit}
+        filter_sql, filter_params, expanding = _filter_clause(source_filter, prefix="codename")
+        params.update(filter_params)
+
+        sql = f"""
+            SELECT
+                {_BASE_COLUMNS},
+                1.0::float AS score
+            FROM item
+            JOIN data_source AS ds ON ds.id = item.source_id
+            WHERE item.name_normalized IS NOT NULL
+              AND item.name_normalized ILIKE :pat
+              {filter_sql}
+            ORDER BY item.name
+            LIMIT :limit
+        """
+        stmt = _bind_expanding(text(sql), expanding)
+        rows = (await self._session.execute(stmt, params)).mappings().all()
+        return [_row_to_hit(row, MatchType.LEXICAL) for row in rows]
+
+    async def known_manufacturers(
+        self,
+        *,
+        source_filter: SourceFilter | None = None,
+    ) -> set[str]:
+        filter_sql, filter_params, expanding = _filter_clause(source_filter, prefix="brand")
+        sql = f"""
+            SELECT DISTINCT item.manufacturer_normalized AS m
+            FROM item
+            JOIN data_source AS ds ON ds.id = item.source_id
+            WHERE item.manufacturer_normalized IS NOT NULL
+              AND item.manufacturer_normalized <> ''
+              {filter_sql}
+        """
+        stmt = _bind_expanding(text(sql), expanding)
+        rows = (await self._session.execute(stmt, filter_params)).mappings().all()
+        return {row["m"] for row in rows if row["m"]}
+
 
 # --- Внутренние утилиты ---
 

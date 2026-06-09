@@ -52,6 +52,11 @@ class Weights:
     extracted_code_exact_boost: float = 0.25
     extracted_code_fuzzy_weight: float = 0.12
 
+    # Код (цифровая серия) найден как подстрока в НАИМЕНОВАНИИ каталога
+    # (модель зашита в имя, артикул пуст). Сильный, но слабее точного
+    # article-совпадения сигнал.
+    extracted_code_in_name_boost: float = 0.18
+
 
 @dataclass
 class AggregatedHit:
@@ -67,6 +72,7 @@ class AggregatedHit:
     lexical: float = 0.0  # нормализованный score из search_lexical
     code_exact: float = 0.0  # 1.0 если извлечённый из имени код совпал точно
     code_fuzzy: float = 0.0  # similarity для fuzzy-совпадения извлечённого кода
+    code_in_name: float = 0.0  # 1.0 если цифровая серия найдена в имени каталога
     code_matched: str | None = None  # сам код, который совпал (для explanation)
     levels_hit: list[MatchType] = field(default_factory=list)
 
@@ -76,6 +82,7 @@ def merge_hits(
     *,
     code_exact_hits: list[tuple[SearchHit, str]] | None = None,
     code_fuzzy_hits: list[tuple[SearchHit, str]] | None = None,
+    code_name_hits: list[tuple[SearchHit, str]] | None = None,
 ) -> list[AggregatedHit]:
     """Дедупликация пула кандидатов по item_id.
 
@@ -131,14 +138,29 @@ def merge_hits(
             agg.code_matched = code
         agg.code_fuzzy = max(agg.code_fuzzy, hit.score)
 
+    for hit, code in code_name_hits or []:
+        agg = _agg_for(hit)
+        # Подхватываем код для explanation, если сильнее ещё ничего не совпало
+        if agg.code_exact == 0.0 and agg.code_matched is None:
+            agg.code_matched = code
+        agg.code_in_name = 1.0
+
     return list(by_item.values())
 
 
-def _brand_match(input_: MatchInput, hit: SearchHit) -> bool:
-    """Case-insensitive equality нормализованных производителей."""
-    if not input_.manufacturer_normalized or not hit.manufacturer_normalized:
+def _brand_match(
+    input_: MatchInput, hit: SearchHit, manufacturer_override: str | None = None
+) -> bool:
+    """Case-insensitive equality нормализованных производителей.
+
+    `manufacturer_override` — бренд, распознанный движком в тексте
+    характеристик/наименования (когда отдельной колонки бренда нет).
+    Приоритетнее явного `input.manufacturer_normalized`.
+    """
+    mfr = manufacturer_override or input_.manufacturer_normalized
+    if not mfr or not hit.manufacturer_normalized:
         return False
-    return input_.manufacturer_normalized.lower() == hit.manufacturer_normalized.lower()
+    return mfr.lower() == hit.manufacturer_normalized.lower()
 
 
 def _unit_match(input_: MatchInput, hit: SearchHit) -> bool:
@@ -157,13 +179,18 @@ def score_candidate(
     agg: AggregatedHit,
     weights: Weights,
     rank: int = 0,
+    *,
+    manufacturer_override: str | None = None,
 ) -> Candidate:
     """Применяет формулу и собирает финальный Candidate.
 
     rank по умолчанию 0 (= не присвоен); вызывающий код после сортировки
     выставляет реальный rank через `model_copy`.
+
+    `manufacturer_override` — бренд, распознанный движком в тексте (задача
+    бренд-буста из характеристик).
     """
-    brand = _brand_match(input_, agg.hit)
+    brand = _brand_match(input_, agg.hit, manufacturer_override)
     unit = _unit_match(input_, agg.hit)
 
     if agg.article_exact >= 1.0:
@@ -194,6 +221,9 @@ def score_candidate(
         if agg.code_exact >= 1.0:
             code_bonus = weights.extracted_code_exact_boost
             extracted_code_match = "exact"
+        elif agg.code_in_name >= 1.0:
+            code_bonus = weights.extracted_code_in_name_boost
+            extracted_code_match = "in_name"
         elif agg.code_fuzzy > 0:
             code_bonus = weights.extracted_code_fuzzy_weight * agg.code_fuzzy
             extracted_code_match = "fuzzy"
@@ -263,6 +293,9 @@ def human_readable_explanation(explanation: Explanation) -> str:
     if explanation.extracted_code_match == "exact":
         code = explanation.extracted_code or "код"
         parts.append(f"код из наименования совпал ({code})")
+    elif explanation.extracted_code_match == "in_name":
+        code = explanation.extracted_code or "код"
+        parts.append(f"код найден в наименовании каталога ({code})")
     elif explanation.extracted_code_match == "fuzzy":
         parts.append("код из наименования похож")
 

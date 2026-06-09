@@ -8,6 +8,7 @@ from fasttender.models import SpecItem
 from fasttender.services.matcher.types import MatchInput
 from fasttender.services.parser.value_normalizer import (
     extract_article_candidates,
+    extract_code_tokens,
     normalize_article,
     normalize_name,
 )
@@ -45,6 +46,11 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         () if article_norm else tuple(extract_article_candidates(search_text))
     )
 
+    # Длинные цифровые серии для поиска кода в наименовании каталога (задача 3).
+    # Извлекаем всегда — модель может быть зашита в имя независимо от наличия
+    # отдельного артикула.
+    code_tokens = tuple(extract_code_tokens(search_text))
+
     return MatchInput(
         line_number=spec_item.line_number,
         name=spec_item.name_raw,
@@ -52,6 +58,7 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         article=spec_item.article_raw,
         article_normalized=article_norm,
         article_candidates=article_candidates,
+        code_tokens=code_tokens,
         manufacturer=spec_item.manufacturer_raw,
         manufacturer_normalized=manufacturer_norm,
         unit=spec_item.unit_raw,

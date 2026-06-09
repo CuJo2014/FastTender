@@ -34,6 +34,11 @@ class MatchInput(BaseModel):
     # нет (раздел 9.1, point 2). Матчер пробует их по article каталога.
     article_candidates: tuple[str, ...] = ()
 
+    # Длинные цифровые серии (≥5) из наименования+характеристик — матчер ищет
+    # их как ПОДСТРОКУ в наименовании каталога (модель зашита в имя, не в
+    # артикул). См. extract_code_tokens.
+    code_tokens: tuple[str, ...] = ()
+
     manufacturer: str | None = None
     manufacturer_normalized: str | None = None
 
@@ -55,7 +60,7 @@ class Explanation(BaseModel):
     brand_match: bool = False
     unit_match: bool = False
     # Код, извлечённый из наименования и совпавший с article каталога (point 2).
-    extracted_code_match: str = "none"  # none | exact | fuzzy
+    extracted_code_match: str = "none"  # none | exact | in_name | fuzzy
     extracted_code: str | None = None
     final_score: float
     human_readable: str

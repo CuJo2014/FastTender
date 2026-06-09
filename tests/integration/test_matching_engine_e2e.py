@@ -264,3 +264,42 @@ async def test_match_many_processes_full_spec(
     # Третья позиция — либо нет в каталоге, либо слабый лексический
     if results[2].catalog:
         assert results[2].catalog[0].confidence < 0.5
+
+
+async def test_code_in_name_and_brand_boost_from_attributes(
+    session: AsyncSession,
+    engine_factory,  # type: ignore[no-untyped-def]
+    tmp_path: Path,
+) -> None:
+    """Задачи 2-3: код модели зашит в ИМЯ каталога (артикул пуст), бренд —
+    в характеристике клиента. Позиция с кодом+брендом должна обойти общую."""
+    catalog = make_xlsx(
+        tmp_path / "catalog.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Производитель", "Ед.", "Цена"],
+            ["", "Домкрат гидравлический ДГ15-3913010-03", "ШААЗ", "шт", "1000"],
+            ["", "Домкрат гидравлический бутылочный 3т Matrix", "Matrix", "шт", "900"],
+        ],
+    )
+    await CatalogImporter().import_file(session, catalog, mode=ImportMode.REPLACE)
+    await session.commit()
+    engine = engine_factory()
+
+    # Как построит адаптер: имя + характеристика «5т Д1-3913010-50 ШААЗ»
+    result = await engine.match(
+        MatchInput(
+            line_number=1,
+            name="Гидравлический домкрат бутылочный",
+            name_normalized="гидравлический домкрат бутылочный 5т д1-3913010-50 шааз",
+            article_normalized=None,
+            code_tokens=("3913010",),
+        ),
+        top_n=5,
+    )
+
+    assert result.catalog, "ожидали кандидатов из каталога"
+    top = result.catalog[0]
+    # Победила позиция ШААЗ с кодом в имени
+    assert "3913010" in top.name
+    assert top.explanation.extracted_code_match == "in_name"
+    assert top.explanation.brand_match is True

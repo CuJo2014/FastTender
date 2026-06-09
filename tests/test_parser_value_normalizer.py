@@ -120,3 +120,14 @@ class TestParseInt:
         assert parse_int("10,5") == 10
         assert parse_int("10") == 10
         assert parse_int("ничего") is None
+
+
+def test_extract_code_tokens_digit_runs() -> None:
+    from fasttender.services.parser.value_normalizer import extract_code_tokens
+
+    assert extract_code_tokens("5т Д1-3913010-50 ШААЗ") == ["3913010"]
+    # короткие числа (тоннаж/размер) отбрасываются
+    assert extract_code_tokens("Домкрат 30т бутылочный") == []
+    # несколько серий, уникальность и порядок
+    assert extract_code_tokens("модель TE-VC 2342380 и 100500") == ["2342380", "100500"]
+    assert extract_code_tokens(None) == []

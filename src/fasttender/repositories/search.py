@@ -112,6 +112,33 @@ class SearchRepository(Protocol):
         """
         ...
 
+    async def search_by_code_in_name(
+        self,
+        code: str,
+        *,
+        source_filter: SourceFilter | None = None,
+        limit: int = 10,
+    ) -> list[SearchHit]:
+        """Поиск кода/модели как ПОДСТРОКИ в наименовании (`name_normalized`).
+
+        Нужен, когда модель зашита в имя каталога, а поле `Артикул` пустое
+        (частый дефект данных 1С: «Домкрат гидравлический ДГ15-3913010-03»).
+        Совпавшие получают score=1.0 (наличие кода в имени — сильный сигнал).
+        """
+        ...
+
+    async def known_manufacturers(
+        self,
+        *,
+        source_filter: SourceFilter | None = None,
+    ) -> set[str]:
+        """Множество нормализованных производителей из индекса.
+
+        Используется матчером, чтобы распознать бренд, зашитый в текст
+        характеристик/наименования (когда отдельной колонки бренда нет).
+        """
+        ...
+
     async def search_semantic(
         self,
         embedding: list[float],

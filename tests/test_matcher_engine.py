@@ -21,10 +21,14 @@ class FakeSearchRepository(SearchRepository):
         exact_hits: list[SearchHit] | None = None,
         fuzzy_hits: list[SearchHit] | None = None,
         lexical_hits: list[SearchHit] | None = None,
+        code_name_hits: list[SearchHit] | None = None,
+        brands: set[str] | None = None,
     ) -> None:
         self._exact = exact_hits or []
         self._fuzzy = fuzzy_hits or []
         self._lex = lexical_hits or []
+        self._code_name = code_name_hits or []
+        self._brands = brands or set()
         self.calls: list[tuple[str, dict]] = []
 
     async def search_by_article(
@@ -48,6 +52,23 @@ class FakeSearchRepository(SearchRepository):
     ) -> list[SearchHit]:
         self.calls.append(("lexical", {"query": query, "limit": limit}))
         return self._lex
+
+    async def search_by_code_in_name(
+        self,
+        code: str,
+        *,
+        source_filter: SourceFilter | None = None,
+        limit: int = 10,
+    ) -> list[SearchHit]:
+        self.calls.append(("code_in_name", {"code": code, "limit": limit}))
+        return self._code_name
+
+    async def known_manufacturers(
+        self,
+        *,
+        source_filter: SourceFilter | None = None,
+    ) -> set[str]:
+        return self._brands
 
 
 def _hit(

@@ -40,3 +40,9 @@ def test_article_candidates_extracted_from_attributes() -> None:
     si = _spec_item(name_raw="Пылесос Einhell", attributes_raw="модель TE-VC 2340 SA 2342380")
     mi = match_input_from_spec_item(si)
     assert any("2342380" in c for c in mi.article_candidates)
+
+
+def test_code_tokens_from_name_and_attributes() -> None:
+    si = _spec_item(name_raw="Домкрат гидравлический бутылочный", attributes_raw="5т Д1-3913010-50 ШААЗ")
+    mi = match_input_from_spec_item(si)
+    assert "3913010" in mi.code_tokens

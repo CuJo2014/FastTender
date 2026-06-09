@@ -368,3 +368,60 @@ class TestMergeCodeHits:
         assert len(aggs) == 1  # тот же item — слиты
         assert aggs[0].lexical == 0.6
         assert aggs[0].code_exact == 1.0
+
+
+# --- Задача 2/3: бренд-override и код-в-имени ---
+
+
+class TestBrandOverrideAndCodeInName:
+    def test_brand_override_adds_boost(self) -> None:
+        """Бренд распознан в тексте (override), хотя колонки бренда нет —
+        boost_brand применяется."""
+        inp = _input(article_normalized=None, manufacturer_normalized=None)
+        hit = _hit(manufacturer_normalized="сибталь", match_type=MatchType.LEXICAL, score=0.6)
+        agg = AggregatedHit(hit=hit, lexical=0.6, levels_hit=[MatchType.LEXICAL])
+        w = Weights()
+
+        without = score_candidate(inp, agg, w)
+        with_brand = score_candidate(inp, agg, w, manufacturer_override="сибталь")
+
+        assert without.explanation.brand_match is False
+        assert with_brand.explanation.brand_match is True
+        assert with_brand.confidence == pytest.approx(without.confidence + w.boost_brand)
+
+    def test_brand_override_no_match_when_other_brand(self) -> None:
+        inp = _input(article_normalized=None, manufacturer_normalized=None)
+        hit = _hit(manufacturer_normalized="matrix", match_type=MatchType.LEXICAL, score=0.6)
+        agg = AggregatedHit(hit=hit, lexical=0.6, levels_hit=[MatchType.LEXICAL])
+        out = score_candidate(inp, agg, Weights(), manufacturer_override="сибталь")
+        assert out.explanation.brand_match is False
+
+    def test_code_in_name_boost(self) -> None:
+        """Код найден в наименовании каталога → отдельный буст и пометка."""
+        inp = _input(article_normalized=None)
+        hit = _hit(name="Домкрат гидравлический ДГ15-3913010-03", match_type=MatchType.LEXICAL)
+        agg = AggregatedHit(hit=hit, lexical=0.5, code_in_name=1.0, code_matched="3913010")
+        w = Weights()
+        out = score_candidate(inp, agg, w)
+        assert out.explanation.extracted_code_match == "in_name"
+        # weighted (lexical через оба веса) + буст code_in_name
+        base = (w.w_article + w.w_lexical) * 0.5
+        assert out.confidence == pytest.approx(base + w.extracted_code_in_name_boost)
+
+    def test_code_in_name_in_merge_hits(self) -> None:
+        h = _hit(name="Домкрат 4523913010", match_type=MatchType.LEXICAL)
+        result = merge_hits({}, code_name_hits=[(h, "3913010")])
+        assert len(result) == 1
+        assert result[0].code_in_name == 1.0
+        assert result[0].code_matched == "3913010"
+
+    def test_code_in_name_human_readable(self) -> None:
+        expl = Explanation(
+            extracted_code_match="in_name",
+            extracted_code="3913010",
+            final_score=0.7,
+            human_readable="",
+        )
+        text = human_readable_explanation(expl)
+        assert "наименовании каталога" in text
+        assert "3913010" in text

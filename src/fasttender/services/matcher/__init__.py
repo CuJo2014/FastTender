@@ -20,6 +20,8 @@
         print(c.confidence, c.primary_match_type, c.name)
 """
 
+import re
+
 from fasttender.models.enums import DataSourceType, MatchType
 from fasttender.repositories.search import SearchHit, SearchRepository, SourceFilter
 from fasttender.services.matcher.reranker import (
@@ -56,6 +58,35 @@ class MatchingEngine:
     ) -> None:
         self._repo = search_repo
         self._weights = weights or Weights()
+        # Кэш брендов каталога (задача бренд-буста). Лениво грузится один раз
+        # на инстанс движка (= один прогон спеки / eval).
+        self._known_brands: set[str] | None = None
+
+    async def _get_known_brands(self, source_filter: SourceFilter | None) -> set[str]:
+        if self._known_brands is None:
+            raw = await self._repo.known_manufacturers(source_filter=source_filter)
+            # Только однословные бренды длиной ≥3 — для быстрого и устойчивого
+            # сопоставления по словам текста (многословные — Фаза 2).
+            self._known_brands = {b for b in raw if b and " " not in b and len(b) >= 3}
+        return self._known_brands
+
+    async def _detect_brand(
+        self, input_: MatchInput, source_filter: SourceFilter | None
+    ) -> str | None:
+        """Распознаёт бренд в тексте (наименование+характеристики), если в
+        строке нет отдельной колонки производителя."""
+        if input_.manufacturer_normalized:
+            return input_.manufacturer_normalized
+        text_norm = input_.name_normalized
+        if not text_norm:
+            return None
+        brands = await self._get_known_brands(source_filter)
+        if not brands:
+            return None
+        for word in re.findall(r"[\wа-яё]+", text_norm.lower()):
+            if word in brands:
+                return word
+        return None
 
     async def match(
         self,
@@ -81,6 +112,10 @@ class MatchingEngine:
         if not input_.article_normalized and not input_.name_normalized:
             return MatchResult(spec_item_line=input_.line_number)
 
+        # Бренд, распознанный в тексте характеристик/наименования (задача
+        # бренд-буста) — применяется в reranker через manufacturer_override.
+        brand_override = await self._detect_brand(input_, source_filter)
+
         per_level: dict[MatchType, list[SearchHit]] = {}
 
         # --- Уровень 1: точное совпадение по артикулу ---
@@ -93,7 +128,9 @@ class MatchingEngine:
             )
             if exact_hits:
                 per_level[MatchType.EXACT_ARTICLE] = exact_hits
-                return self._assemble_result(input_, per_level, top_n=top_n)
+                return self._assemble_result(
+                    input_, per_level, top_n=top_n, manufacturer_override=brand_override
+                )
 
         # --- Уровень 2: нечёткое по артикулу ---
         if input_.article_normalized:
@@ -133,12 +170,23 @@ class MatchingEngine:
                 )
                 code_fuzzy_hits.extend((h, code) for h in fuzzy)
 
+        # --- Задача 3: код (цифровая серия) как подстрока в наименовании ---
+        # Покрывает дефект данных «модель в имени, артикул пуст».
+        code_name_hits: list[tuple[SearchHit, str]] = []
+        for token in input_.code_tokens:
+            hits = await self._repo.search_by_code_in_name(
+                token, source_filter=source_filter, limit=pool_limit
+            )
+            code_name_hits.extend((h, token) for h in hits)
+
         return self._assemble_result(
             input_,
             per_level,
             code_exact_hits=code_exact_hits,
             code_fuzzy_hits=code_fuzzy_hits,
+            code_name_hits=code_name_hits,
             top_n=top_n,
+            manufacturer_override=brand_override,
         )
 
     async def match_many(
@@ -168,17 +216,30 @@ class MatchingEngine:
         *,
         code_exact_hits: list[tuple[SearchHit, str]] | None = None,
         code_fuzzy_hits: list[tuple[SearchHit, str]] | None = None,
+        code_name_hits: list[tuple[SearchHit, str]] | None = None,
         top_n: int,
+        manufacturer_override: str | None = None,
     ) -> MatchResult:
-        if not per_level and not code_exact_hits and not code_fuzzy_hits:
+        if (
+            not per_level
+            and not code_exact_hits
+            and not code_fuzzy_hits
+            and not code_name_hits
+        ):
             return MatchResult(spec_item_line=input_.line_number)
 
         aggregated = merge_hits(
             per_level,
             code_exact_hits=code_exact_hits,
             code_fuzzy_hits=code_fuzzy_hits,
+            code_name_hits=code_name_hits,
         )
-        scored = [score_candidate(input_, agg, self._weights) for agg in aggregated]
+        scored = [
+            score_candidate(
+                input_, agg, self._weights, manufacturer_override=manufacturer_override
+            )
+            for agg in aggregated
+        ]
         scored.sort(key=lambda c: c.confidence, reverse=True)
 
         catalog = [c for c in scored if c.source_type is DataSourceType.COMPANY_CATALOG][:top_n]

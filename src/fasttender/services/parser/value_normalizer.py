@@ -114,6 +114,30 @@ def extract_article_candidates(name: Any) -> list[str]:
     return candidates
 
 
+def extract_code_tokens(text: Any) -> list[str]:
+    """Длинные цифровые серии (≥5 цифр) из текста — для поиска кода в
+    НАИМЕНОВАНИИ каталога, когда модель/код зашиты в имя, а не в артикул.
+
+    Пример: «5т Д1-3913010-50 ШААЗ» → ['3913010']; матчится по подстроке с
+    каталожным «Домкрат гидравлический ДГ15-3913010-03» и «Домкрат 4523913010».
+    Короткие числа (размеры/количество/тоннаж) отсекаются порогом длины ≥5 —
+    они слишком частотны и дали бы ложные совпадения.
+
+    Возвращает уникальные серии в порядке появления (в нижнем регистре —
+    name_normalized тоже lowercase).
+    """
+    s = clean_string(text)
+    if s is None:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for run in re.findall(r"\d{5,}", s):
+        if run not in seen:
+            seen.add(run)
+            out.append(run)
+    return out
+
+
 def parse_decimal(value: Any) -> Decimal | None:
     """Извлекает Decimal из произвольного значения.
 
