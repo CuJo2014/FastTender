@@ -44,6 +44,16 @@
 		-Server
 	}
 
+	# --- Кэширование статики (SPA) ---
+	# Хэшированные ассеты (assets/index-<hash>.js|css) неизменны при том же
+	# имени → кэшируем навсегда.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	# index.html и SPA-fallback — всегда сверять, чтобы браузер подхватывал
+	# новый бандл сразу после деплоя (без ручного хард-рефреша).
+	@notassets not path /assets/*
+	header @notassets Cache-Control "no-cache"
+
 	# --- API + health → FastAPI ---
 	@api {
 		path /api/* /health /health/* /docs /docs/* /openapi.json
