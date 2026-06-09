@@ -75,10 +75,25 @@ router = APIRouter(prefix="/specifications", tags=["specifications"])
 )
 async def upload_specification(
     file: UploadFile = File(...),
+    client_id: UUID | None = Query(None, description="Клиент из справочника (приоритетнее имени)"),
     client_name: str | None = Query(None, max_length=255),
     session: AsyncSession = Depends(get_session),
 ) -> SpecificationUploadResponse:
     _validate_upload(file)
+
+    # Клиент из справочника приоритетнее свободного имени: привязываем по FK
+    # и денормализуем имя (для legacy/аудита/экспорта).
+    resolved_client_id: UUID | None = None
+    resolved_client_name: str | None = client_name
+    if client_id is not None:
+        client = await session.get(Client, client_id)
+        if client is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail={"message": "Клиент не найден"},
+            )
+        resolved_client_id = client.id
+        resolved_client_name = client.name
 
     settings = get_settings()
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +110,8 @@ async def upload_specification(
     spec = Specification(
         source_filename=file.filename or storage_path.name,
         storage_path=str(storage_path),
-        client_name=client_name,
+        client_id=resolved_client_id,
+        client_name=resolved_client_name,
         status=SpecificationStatus.UPLOADED,
         meta={},
     )

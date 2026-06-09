@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
@@ -11,13 +11,13 @@ export function SpecificationUploadPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [file, setFile] = useState<File | null>(null);
-  const [clientName, setClientName] = useState("");
+  const [clientId, setClientId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
 
   const upload = useMutation({
     mutationFn: () => {
       if (!file) throw new Error("Файл не выбран");
-      return api.uploadSpecification(file, clientName.trim() || undefined);
+      return api.uploadSpecification(file, { clientId });
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["specifications"] });
@@ -91,15 +91,9 @@ export function SpecificationUploadPage() {
 
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-700">
-              Имя клиента <span className="text-slate-400">(опционально)</span>
+              Клиент <span className="text-slate-400">(опционально)</span>
             </label>
-            <input
-              type="text"
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
-              placeholder="ООО Ромашка"
-              className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+            <ClientSelect value={clientId} onChange={setClientId} />
           </div>
 
           {upload.isError && (
@@ -129,5 +123,58 @@ export function SpecificationUploadPage() {
         </form>
       </CardBody>
     </Card>
+  );
+}
+
+/**
+ * Контролируемый выбор клиента: из справочника или «создать нового».
+ * Аналог ClientPicker из формы спеки, но хранит выбор в локальном состоянии
+ * (спеки ещё нет — id уйдёт в запрос загрузки).
+ */
+function ClientSelect({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (clientId: string | null) => void;
+}) {
+  const qc = useQueryClient();
+  const { data: clients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: () => api.listClients(),
+  });
+
+  const createMut = useMutation({
+    mutationFn: (name: string) => api.createClient({ name }),
+    onSuccess: (c) => {
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      onChange(c.id);
+    },
+  });
+
+  const handleChange = (v: string) => {
+    if (v === "__new__") {
+      const name = window.prompt("Название нового клиента:")?.trim();
+      if (name) createMut.mutate(name);
+      return;
+    }
+    onChange(v || null);
+  };
+
+  return (
+    <select
+      value={value ?? ""}
+      disabled={createMut.isPending}
+      onChange={(e) => handleChange(e.target.value)}
+      className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+    >
+      <option value="">— не выбран —</option>
+      {(clients ?? []).map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+      <option value="__new__">+ Создать нового…</option>
+    </select>
   );
 }

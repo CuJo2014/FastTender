@@ -90,12 +90,17 @@ export const api = {
       `/specifications/${id}/items?page=${page}&page_size=${pageSize}`,
     ),
 
-  uploadSpecification: async (file: File, clientName?: string) => {
+  uploadSpecification: async (
+    file: File,
+    opts?: { clientId?: string | null; clientName?: string | null },
+  ) => {
     const form = new FormData();
     form.append("file", file);
-    const url = clientName
-      ? `/specifications/?client_name=${encodeURIComponent(clientName)}`
-      : "/specifications/";
+    const params = new URLSearchParams();
+    if (opts?.clientId) params.set("client_id", opts.clientId);
+    else if (opts?.clientName) params.set("client_name", opts.clientName);
+    const qs = params.toString();
+    const url = `/specifications/${qs ? `?${qs}` : ""}`;
     const response = await fetch(`${BASE}${url}`, {
       method: "POST",
       body: form,

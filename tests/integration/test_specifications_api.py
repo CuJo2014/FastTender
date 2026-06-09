@@ -30,6 +30,7 @@ _TABLES = (
     "match_candidate",
     "spec_item",
     "specification",
+    "client",
     "item",
     "data_source",
     "supplier",
@@ -135,6 +136,54 @@ async def test_upload_returns_202_with_spec_id(
     body = response.json()
     assert "spec_id" in body
     assert body["filename"] == "spec.xlsx"
+
+
+async def test_upload_with_client_id_links_client_and_name(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    await _seed_catalog(committed_db, tmp_path)
+    created = await client.post("/api/v1/clients/", json={"name": "ООО Подшипник"})
+    assert created.status_code == 201
+    cid = created.json()["id"]
+
+    resp = await client.post(
+        "/api/v1/specifications/",
+        files={
+            "file": (
+                "spec.xlsx",
+                _make_spec_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+        params={"client_id": cid},
+    )
+    assert resp.status_code == 202
+    spec_id = resp.json()["spec_id"]
+
+    spec = (await client.get(f"/api/v1/specifications/{spec_id}")).json()
+    assert spec["client_id"] == cid
+    # client_name денормализуется из выбранного клиента
+    assert spec["client_name"] == "ООО Подшипник"
+
+
+async def test_upload_with_unknown_client_id_returns_404(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    resp = await client.post(
+        "/api/v1/specifications/",
+        files={
+            "file": (
+                "spec.xlsx",
+                _make_spec_bytes(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        },
+        params={"client_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert resp.status_code == 404
 
 
 async def test_upload_rejects_unsupported_extension(
