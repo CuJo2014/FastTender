@@ -322,3 +322,12 @@ def test_attributes_extracted_into_parsed_item() -> None:
     res = build_result(matrix)
     assert len(res.items) == 1
     assert res.items[0].attributes == "М10х40 DIN933 оцинкованный"
+
+
+def test_trademark_synonyms_map_to_manufacturer() -> None:
+    for header in ("Торговая марка", "ТМ", "Товарный знак", "Производитель", "Бренд"):
+        rows = [["Артикул", "Наименование", header, "Цена"], ["A1", "Болт", "KOELNER", 10]]
+        result = detect_header(rows)
+        assert result is not None, header
+        _, mapping = result
+        assert mapping.get(SpecField.MANUFACTURER) == 2, header
