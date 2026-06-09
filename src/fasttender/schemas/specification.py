@@ -150,6 +150,7 @@ class SpecItemRead(BaseModel):
     name_raw: str
     article_raw: str | None
     manufacturer_raw: str | None
+    attributes_raw: str | None = None
     unit_raw: str | None
     quantity: Decimal | None
     price_raw: Decimal | None

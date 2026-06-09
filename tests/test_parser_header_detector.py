@@ -280,3 +280,45 @@ def test_catalog_keeps_both_article_and_kod() -> None:
     _, mapping = result
     assert mapping.get(SpecField.ARTICLE) == 0
     assert mapping.get(SpecField.CODE_1C) == 1
+
+
+def test_attributes_column_detected() -> None:
+    """Колонка «Характеристики» → SpecField.ATTRIBUTES."""
+    rows = [
+        ["Наименование", "Характеристики", "Кол-во", "Ед. изм."],
+        ["Болт", "М10х40, DIN933, оцинк.", 10, "шт"],
+    ]
+    result = detect_header(rows)
+    assert result is not None
+    _, mapping = result
+    assert mapping.get(SpecField.NAME) == 0
+    assert mapping.get(SpecField.ATTRIBUTES) == 1
+
+
+def test_attributes_synonyms_variants() -> None:
+    for header in (
+        "Характеристика",
+        "Технические характеристики",
+        "Тех. характеристики",
+        "Параметры",
+        "Параметры подбора",
+        "Свойства",
+    ):
+        rows = [["Наименование", header, "Кол-во"], ["x", "y", 1]]
+        result = detect_header(rows)
+        assert result is not None, header
+        _, mapping = result
+        assert mapping.get(SpecField.ATTRIBUTES) == 1, header
+
+
+def test_attributes_extracted_into_parsed_item() -> None:
+    """build_result кладёт значение колонки характеристик в ParsedItem.attributes."""
+    from fasttender.services.parser._matrix import build_result
+
+    matrix = [
+        ["Наименование", "Характеристики", "Кол-во"],
+        ["Болт", "М10х40 DIN933 оцинкованный", 10],
+    ]
+    res = build_result(matrix)
+    assert len(res.items) == 1
+    assert res.items[0].attributes == "М10х40 DIN933 оцинкованный"

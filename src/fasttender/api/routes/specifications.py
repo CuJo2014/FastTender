@@ -398,6 +398,7 @@ async def get_specification_items(
                 name_raw=spec_item.name_raw,
                 article_raw=spec_item.article_raw,
                 manufacturer_raw=spec_item.manufacturer_raw,
+                attributes_raw=spec_item.attributes_raw,
                 unit_raw=spec_item.unit_raw,
                 quantity=spec_item.quantity,
                 price_raw=spec_item.price_raw,

@@ -22,7 +22,16 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
     нормализации на обеих сторонах поиска).
     """
     article_norm = spec_item.article_normalized or normalize_article(spec_item.article_raw)
-    name_norm = spec_item.name_normalized or normalize_name(spec_item.name_raw)
+
+    # Характеристики/параметры подбора (М10х40, DIN933, 220В) — значимый сигнал
+    # для лексического поиска. Подмешиваем их в ТЕКСТ ПОИСКА (name_normalized) и
+    # в извлечение кодов, но НЕ в отображаемое имя (input.name остаётся чистым).
+    # Тот же приём, что в eval_gold.build_match_input — обе стороны согласованы.
+    search_text = spec_item.name_raw
+    if spec_item.attributes_raw:
+        search_text = f"{spec_item.name_raw} {spec_item.attributes_raw}"
+    name_norm = normalize_name(search_text)
+
     unit_norm = spec_item.unit_normalized or (
         spec_item.unit_raw.lower().strip() if spec_item.unit_raw else None
     )
@@ -30,10 +39,10 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         spec_item.manufacturer_raw.lower().strip() if spec_item.manufacturer_raw else None
     )
 
-    # Если явного артикула нет — пробуем вытащить код/модель из наименования
-    # (point 2). При наличии явного артикула это не нужно: его и так ищем.
+    # Если явного артикула нет — пробуем вытащить код/модель из наименования +
+    # характеристик (point 2). При наличии явного артикула это не нужно.
     article_candidates = (
-        () if article_norm else tuple(extract_article_candidates(spec_item.name_raw))
+        () if article_norm else tuple(extract_article_candidates(search_text))
     )
 
     return MatchInput(

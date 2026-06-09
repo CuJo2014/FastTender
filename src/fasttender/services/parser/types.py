@@ -27,6 +27,9 @@ class SpecField(StrEnum):
     CODE_1C = "code_1c"  # внутренний код 1С (отличается от Артикула)
     MANUFACTURER = "manufacturer"
     CATEGORY = "category"
+    # Характеристики/параметры подбора (М10х40, DIN933, 220В, размеры). У клиентских
+    # спек несут значимые признаки для лексического матчинга (раздел 9.1).
+    ATTRIBUTES = "attributes"
     QUANTITY = "quantity"
     UNIT = "unit"
     PRICE = "price"
@@ -97,6 +100,7 @@ class ParsedItem(BaseModel):
     code_1c: str | None = None  # код номенклатуры из 1С
     manufacturer: str | None = None
     category: str | None = None  # путь иерархии «Крепёж / Болты / DIN933»
+    attributes: str | None = None  # характеристики/параметры подбора (как у клиента)
     quantity: Decimal | None = None
     unit: str | None = None
     price: Decimal | None = None  # основная цена (preferred из prices, либо одиночная)

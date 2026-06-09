@@ -170,6 +170,7 @@ export interface SpecItemRead {
   name_raw: string;
   article_raw: string | null;
   manufacturer_raw: string | null;
+  attributes_raw: string | null;
   unit_raw: string | null;
   quantity: string | null;
   price_raw: string | null;

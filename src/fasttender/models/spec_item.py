@@ -31,6 +31,9 @@ class SpecItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name_raw: Mapped[str] = mapped_column(String(1024), nullable=False)
     article_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
     manufacturer_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Характеристики/параметры подбора как у клиента (М10х40, DIN933, 220В).
+    # Значимый сигнал для лексического матчинга (раздел 9.1).
+    attributes_raw: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     unit_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
     quantity: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)
     price_raw: Mapped[float | None] = mapped_column(Numeric(18, 4), nullable=True)

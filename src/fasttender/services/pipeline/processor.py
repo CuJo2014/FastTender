@@ -181,6 +181,7 @@ class SpecificationProcessor:
             name_raw=parsed.name,
             article_raw=parsed.article,
             manufacturer_raw=parsed.manufacturer,
+            attributes_raw=parsed.attributes,
             unit_raw=parsed.unit,
             quantity=parsed.quantity,
             price_raw=parsed.price,

@@ -69,6 +69,14 @@ export function SpecItemRow({
               <span className="ml-2">{item.manufacturer_raw}</span>
             )}
           </div>
+          {item.attributes_raw && (
+            <div
+              className="mt-0.5 line-clamp-2 text-xs text-slate-400"
+              title={item.attributes_raw}
+            >
+              ⚙ {item.attributes_raw}
+            </div>
+          )}
         </td>
         <td
           className={`${td} tabular-nums text-slate-600${tdSticky}`}
