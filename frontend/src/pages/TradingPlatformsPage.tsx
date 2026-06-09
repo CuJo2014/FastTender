@@ -178,8 +178,7 @@ export function TradingPlatformsPage() {
                         </Button>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="text-red-600 hover:bg-red-50"
+                          variant="danger-ghost"
                           onClick={() => handleDelete(p)}
                         >
                           Удалить

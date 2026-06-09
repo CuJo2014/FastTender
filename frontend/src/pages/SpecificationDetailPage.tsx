@@ -1,4 +1,10 @@
-import { useCallback, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
@@ -12,6 +18,17 @@ import { ProgressBar } from "../components/ProgressBar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { SpecItemRow } from "../components/SpecItemRow";
+import { useColumnWidths } from "../hooks/useColumnWidths";
+
+// Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
+const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
+  { id: "num", label: "№", default: 48 },
+  { id: "source", label: "Исходная позиция", default: 360 },
+  { id: "qty", label: "Кол-во", default: 112 },
+  { id: "chosen", label: "Выбранная позиция", default: 360 },
+  { id: "decision", label: "Решение", default: 160 },
+  { id: "actions", label: "", default: 128 },
+];
 import {
   formatDateTime,
   isInProgress,
@@ -50,6 +67,39 @@ function DetailContent({ specId }: { specId: string }) {
     ro.observe(node);
     roRef.current = ro;
   }, []);
+
+  // Ширины колонок таблицы строк (drag-resize, сохраняются глобально).
+  const { widths, setWidth, resetWidth, resetAll } = useColumnWidths();
+  const colW = useCallback(
+    (id: string) =>
+      widths[id] ?? SPEC_COLUMNS.find((c) => c.id === id)?.default ?? 120,
+    [widths],
+  );
+  const dragRef = useRef<{ id: string; startX: number; startW: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const d = dragRef.current;
+      if (d) setWidth(d.id, d.startW + (e.clientX - d.startX));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [setWidth]);
+  const startResize = (id: string) => (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragRef.current = { id, startX: e.clientX, startW: colW(id) };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
 
   const specQuery = useQuery({
     queryKey: ["specifications", specId],
@@ -324,26 +374,48 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           ) : (
             <div>
-              <table className="min-w-full text-sm">
+              <div className="flex justify-end px-4 py-1">
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="text-xs text-slate-400 hover:text-slate-600 hover:underline"
+                  title="Сбросить ширины всех колонок к значениям по умолчанию"
+                >
+                  ↔ сбросить ширины
+                </button>
+              </div>
+              <table
+                className="text-sm"
+                style={{
+                  tableLayout: "fixed",
+                  width: SPEC_COLUMNS.reduce((s, c) => s + colW(c.id), 0),
+                }}
+              >
+                <colgroup>
+                  {SPEC_COLUMNS.map((c) => (
+                    <col key={c.id} style={{ width: colW(c.id) }} />
+                  ))}
+                </colgroup>
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   {/* sticky на <th>, а не на <thead> — для кросс-браузерной
                       совместимости (Safari/старый Firefox требуют именно так).
                       top = высота шапки спеки + 56px (header h-14). */}
                   <tr>
-                    {[
-                      { label: "№", width: "w-12" },
-                      { label: "Исходная позиция" },
-                      { label: "Кол-во", width: "w-28" },
-                      { label: "Выбранная позиция" },
-                      { label: "Решение", width: "w-40" },
-                      { label: "", width: "w-32" },
-                    ].map((col, i) => (
+                    {SPEC_COLUMNS.map((col) => (
                       <th
-                        key={i}
-                        className={`sticky z-10 bg-slate-50 px-4 py-3 font-medium shadow-sm ${col.width ?? ""}`}
+                        key={col.id}
+                        className="sticky z-10 bg-slate-50 px-4 py-3 font-medium shadow-sm relative select-none overflow-hidden text-ellipsis"
                         style={{ top: stickyHeaderHeight + 56 }}
                       >
                         {col.label}
+                        {/* Ручка ресайза на правом крае: тянуть — менять
+                            ширину, двойной клик — сбросить эту колонку. */}
+                        <span
+                          onMouseDown={startResize(col.id)}
+                          onDoubleClick={() => resetWidth(col.id)}
+                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300"
+                          title="Тянуть — ширина; двойной клик — сбросить"
+                        />
                       </th>
                     ))}
                   </tr>

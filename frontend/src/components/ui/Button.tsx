@@ -1,7 +1,13 @@
 import { type ButtonHTMLAttributes, forwardRef } from "react";
 import { clsx } from "clsx";
 
-type Variant = "primary" | "secondary" | "outline" | "ghost" | "danger";
+type Variant =
+  | "primary"
+  | "secondary"
+  | "outline"
+  | "ghost"
+  | "danger"
+  | "danger-ghost";
 type Size = "sm" | "md" | "lg";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -16,6 +22,9 @@ const variantClasses: Record<Variant, string> = {
     "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50 disabled:text-slate-400",
   ghost: "text-slate-700 hover:bg-slate-100 disabled:text-slate-400",
   danger: "bg-red-600 text-white hover:bg-red-500 disabled:bg-red-300",
+  // «Опасное» ghost-действие: красный текст без фона (цвет задаётся
+  // вариантом, без костыля !important поверх ghost).
+  "danger-ghost": "text-red-600 hover:bg-red-50 disabled:text-red-300",
 };
 
 const sizeClasses: Record<Size, string> = {
