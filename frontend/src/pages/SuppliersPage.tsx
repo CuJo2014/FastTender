@@ -1,7 +1,11 @@
-import { useState, type FormEvent } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import type { SupplierRead, SupplierTransformations } from "../types/api";
+import type {
+  SupplierRead,
+  SupplierSettings,
+  SupplierTransformations,
+} from "../types/api";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { ImportPanel } from "../components/ImportPanel";
@@ -12,6 +16,74 @@ export function SuppliersPage() {
     <div className="space-y-6">
       <NewSupplierForm />
       <SupplierList />
+    </div>
+  );
+}
+
+function SettingsIO() {
+  const qc = useQueryClient();
+  const exportMut = useMutation({
+    mutationFn: () => api.exportSupplierSettings(),
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "supplier-settings.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+  });
+  const importMut = useMutation({
+    mutationFn: (settings: SupplierSettings[]) =>
+      api.importSupplierSettings(settings),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["suppliers"] });
+      const skipped = res.skipped_unknown.length
+        ? `\nПропущены (нет такого поставщика): ${res.skipped_unknown.join(", ")}`
+        : "";
+      window.alert(`Применено настроек: ${res.applied}${skipped}`);
+    },
+    onError: () =>
+      window.alert("Не удалось импортировать настройки (проверьте JSON)"),
+  });
+
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      file.text().then((txt) => {
+        try {
+          importMut.mutate(JSON.parse(txt));
+        } catch {
+          window.alert("Некорректный JSON");
+        }
+      });
+    }
+    e.target.value = "";
+  };
+
+  return (
+    <div className="flex gap-2">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => exportMut.mutate()}
+        disabled={exportMut.isPending}
+        title="Скачать настройки всех поставщиков (префикс + трансформации)"
+      >
+        ↓ Настройки
+      </Button>
+      <label className="inline-flex cursor-pointer items-center rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm font-medium text-slate-900 hover:bg-slate-50">
+        ↑ Импорт
+        <input
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={onFile}
+        />
+      </label>
     </div>
   );
 }
@@ -28,6 +100,7 @@ function SupplierList() {
         title={`Поставщики${data && data.length > 0 ? ` (${data.length})` : ""}`}
         description="Управление прайс-листами"
         className="sticky top-14 z-10 rounded-t-lg shadow-sm"
+        actions={<SettingsIO />}
       />
       <CardBody>
         {isLoading && (
@@ -247,6 +320,17 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
             </div>
           </div>
 
+          <TransformPreview
+            transformations={{
+              brand_regex: brandRegex.trim() || null,
+              vat_included: vatIncluded,
+              vat_rate: vatRate,
+              default_unit: defaultUnit.trim() || null,
+              default_currency: defaultCurrency.trim() || null,
+              manufacturer: manufacturer.trim() || null,
+            }}
+          />
+
           <div className="flex items-center gap-2">
             <Button
               size="sm"
@@ -266,6 +350,71 @@ function TransformationsBlock({ supplier }: { supplier: SupplierRead }) {
               </span>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TransformPreview({
+  transformations,
+}: {
+  transformations: SupplierTransformations;
+}) {
+  const [name, setName] = useState("Болт М10х40 // Sparta");
+  const [price, setPrice] = useState("120");
+  const preview = useMutation({
+    mutationFn: () =>
+      api.previewTransform({
+        transformations,
+        name: name.trim(),
+        price: price.trim() ? Number(price) : null,
+      }),
+  });
+  const r = preview.data;
+  return (
+    <div className="rounded border border-slate-200 bg-white p-2">
+      <div className="mb-1 text-[10px] font-medium uppercase text-slate-400">
+        Проверка на примере
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="наименование"
+          className="min-w-48 flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+        />
+        <input
+          value={price}
+          onChange={(e) => setPrice(e.target.value)}
+          placeholder="цена"
+          className="w-24 rounded border border-slate-300 px-2 py-1 text-xs"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => name.trim() && preview.mutate()}
+          disabled={preview.isPending || !name.trim()}
+        >
+          {preview.isPending ? "…" : "→ применить"}
+        </Button>
+      </div>
+      {r && (
+        <div className="mt-1.5 rounded bg-slate-50 px-2 py-1 text-xs">
+          <div>
+            имя: <span className="font-medium">{r.name}</span>
+          </div>
+          <div className="text-slate-600">
+            бренд: {r.manufacturer ?? "—"} · цена: {r.price ?? "—"}{" "}
+            {r.currency ?? ""} · ед: {r.unit ?? "—"}
+          </div>
+        </div>
+      )}
+      {preview.isError && (
+        <div className="mt-1 text-xs text-red-700">
+          {preview.error instanceof ApiError
+            ? `Ошибка ${preview.error.status} (проверьте regex)`
+            : "Ошибка превью"}
         </div>
       )}
     </div>

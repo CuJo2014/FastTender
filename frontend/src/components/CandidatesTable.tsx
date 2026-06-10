@@ -1,5 +1,7 @@
 import { useState } from "react";
-import type { CandidateRead } from "../types/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import type { CandidateRead, CatalogSearchResult } from "../types/api";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 import { ConfidenceCell } from "./ConfidenceCell";
@@ -11,6 +13,8 @@ interface Props {
   selectedItemId: string | null;
   onConfirm: (itemId: string) => void;
   disabled?: boolean;
+  /** Разрешить ручную привязку прайс-позиции к карточке каталога (P3.6). */
+  allowRelink?: boolean;
 }
 
 export function CandidatesTable({
@@ -19,6 +23,7 @@ export function CandidatesTable({
   selectedItemId,
   onConfirm,
   disabled,
+  allowRelink,
 }: Props) {
   // Пустые секции свёрнуты по умолчанию — не занимают место, поиск поднимается выше.
   const [open, setOpen] = useState(candidates.length > 0);
@@ -112,6 +117,12 @@ export function CandidatesTable({
                         ""}
                     </div>
                   )}
+                  {allowRelink && cand.source_type === "supplier_pricelist" && (
+                    <CatalogLinkEditor
+                      itemId={cand.item_id}
+                      hasLink={cand.linked_catalog != null}
+                    />
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   {cand.name}
@@ -151,6 +162,128 @@ export function CandidatesTable({
           })}
         </tbody>
       </table>
+      )}
+    </div>
+  );
+}
+
+/**
+ * P3.6: ручная привязка прайс-позиции к карточке каталога компании.
+ * Поиск ведём по каталогу (фильтруем company_catalog), на выбор —
+ * PATCH /items/{id}/catalog-link; «↺ авто» сбрасывает на авто-связку.
+ */
+function CatalogLinkEditor({
+  itemId,
+  hasLink,
+}: {
+  itemId: string;
+  hasLink: boolean;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["specifications"] });
+  const search = useMutation({ mutationFn: (q: string) => api.searchCatalog(q, 20) });
+  const link = useMutation({
+    mutationFn: (catalogItemId: string) => api.setCatalogLink(itemId, catalogItemId),
+    onSuccess: () => {
+      invalidate();
+      setOpen(false);
+      setQuery("");
+    },
+  });
+  const auto = useMutation({
+    mutationFn: () => api.resetCatalogLinkAuto(itemId),
+    onSuccess: invalidate,
+  });
+
+  const results = (search.data ?? []).filter(
+    (r: CatalogSearchResult) => r.source_type === "company_catalog",
+  );
+  const busy = link.isPending || auto.isPending;
+
+  if (!open) {
+    return (
+      <div className="mt-1 flex gap-2">
+        <button
+          type="button"
+          className="text-[10px] text-blue-600 hover:underline"
+          onClick={() => setOpen(true)}
+        >
+          ✎ {hasLink ? "изменить карточку" : "привязать карточку"}
+        </button>
+        {hasLink && (
+          <button
+            type="button"
+            className="text-[10px] text-slate-400 hover:underline disabled:opacity-50"
+            onClick={() => auto.mutate()}
+            disabled={busy}
+            title="Сбросить на авто-связку"
+          >
+            ↺ авто
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 rounded border border-blue-200 bg-blue-50/40 p-1.5">
+      <form
+        className="flex gap-1"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (query.trim()) search.mutate(query.trim());
+        }}
+      >
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="поиск по каталогу…"
+          className="w-44 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
+        />
+        <button type="submit" className="text-[10px] text-blue-600 hover:underline">
+          найти
+        </button>
+        <button
+          type="button"
+          className="ml-auto text-[10px] text-slate-400 hover:underline"
+          onClick={() => setOpen(false)}
+        >
+          закрыть
+        </button>
+      </form>
+      {results.length > 0 && (
+        <ul className="mt-1 max-h-40 divide-y divide-slate-200 overflow-y-auto">
+          {results.map((r) => (
+            <li
+              key={r.item_id}
+              className="flex items-center gap-2 py-0.5 text-[11px] hover:bg-white"
+            >
+              <span className="font-mono text-slate-500">
+                {r.code_1c ?? r.article ?? "—"}
+              </span>
+              <span className="flex-1 truncate" title={r.name}>
+                {r.name}
+              </span>
+              <button
+                type="button"
+                className="text-blue-600 hover:underline disabled:opacity-50"
+                onClick={() => link.mutate(r.item_id)}
+                disabled={busy}
+              >
+                выбрать
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {search.isSuccess && results.length === 0 && (
+        <div className="mt-1 text-[10px] text-slate-400">
+          в каталоге ничего не найдено
+        </div>
       )}
     </div>
   );

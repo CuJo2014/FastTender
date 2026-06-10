@@ -149,6 +149,7 @@ export function SpecItemRow({
                 selectedItemId={item.verification?.chosen_item_id ?? null}
                 onConfirm={(itemId) => onVerify(item.id, "confirmed", itemId)}
                 disabled={pending}
+                allowRelink
               />
 
               <div className="flex items-center justify-end gap-2 pt-2">

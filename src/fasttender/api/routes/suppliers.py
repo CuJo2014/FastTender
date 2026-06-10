@@ -2,10 +2,12 @@
 
 import shutil
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +32,11 @@ from fasttender.services.importer._base import (
     auto_link_to_catalog,
     backfill_supplier_skus,
 )
-from fasttender.services.parser import SpecificationParser
+from fasttender.services.importer.transformations import (
+    SupplierTransformations,
+    apply_transformations,
+)
+from fasttender.services.parser import ParsedItem, SpecificationParser
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -318,3 +324,127 @@ def _validate_upload(file: UploadFile) -> None:
                 "size_bytes": file.size,
             },
         )
+
+
+# --- P3.7: preview эффекта трансформаций на образце строки ---
+
+
+class TransformPreviewRequest(BaseModel):
+    transformations: SupplierTransformations
+    name: str = Field(..., min_length=1)
+    price: Decimal | None = None
+    unit: str | None = None
+    currency: str | None = None
+    manufacturer: str | None = None
+
+
+class TransformPreviewResponse(BaseModel):
+    name: str
+    manufacturer: str | None = None
+    price: Decimal | None = None
+    unit: str | None = None
+    currency: str | None = None
+
+
+@router.post(
+    "/preview-transform",
+    response_model=TransformPreviewResponse,
+    summary="Применить трансформации к образцу строки (preview, без БД)",
+)
+async def preview_transform(payload: TransformPreviewRequest) -> TransformPreviewResponse:
+    """Показывает, во что превратится строка прайса при заданных трансформациях.
+
+    Чистая функция — БД не трогает. Для UI-настройки brand_regex/НДС/дефолтов.
+    """
+    item = ParsedItem(
+        line_number=1,
+        name=payload.name,
+        price=payload.price,
+        unit=payload.unit,
+        currency=payload.currency,
+        manufacturer=payload.manufacturer,
+    )
+    out = apply_transformations([item], payload.transformations)[0]
+    return TransformPreviewResponse(
+        name=out.name,
+        manufacturer=out.manufacturer,
+        price=out.price,
+        unit=out.unit,
+        currency=out.currency,
+    )
+
+
+# --- P3.8: экспорт/импорт настроек поставщиков ---
+
+
+class SupplierSettings(BaseModel):
+    name: str
+    prefix: str | None = None
+    transformations: dict | None = None
+
+
+class SettingsImportResult(BaseModel):
+    applied: int
+    skipped_unknown: list[str]
+
+
+@router.get(
+    "/settings/export",
+    response_model=list[SupplierSettings],
+    summary="Экспорт настроек всех поставщиков (имя, префикс, трансформации)",
+)
+async def export_supplier_settings(
+    session: AsyncSession = Depends(get_session),
+) -> list[SupplierSettings]:
+    suppliers = list((await session.scalars(select(Supplier).order_by(Supplier.name))).all())
+    return [
+        SupplierSettings(
+            name=s.name,
+            prefix=s.prefix,
+            transformations=(s.meta or {}).get("transformations"),
+        )
+        for s in suppliers
+    ]
+
+
+@router.post(
+    "/settings/import",
+    response_model=SettingsImportResult,
+    summary="Импорт настроек (по имени; обновляет существующих, не создаёт)",
+)
+async def import_supplier_settings(
+    payload: list[SupplierSettings],
+    session: AsyncSession = Depends(get_session),
+) -> SettingsImportResult:
+    """Применяет настройки к СУЩЕСТВУЮЩИМ поставщикам (матч по имени).
+
+    Обновляет prefix и transformations. Неизвестные имена — в skipped (не
+    создаём: создание требует прайса/контактов отдельно). Массовый ре-импорт
+    прайсов невозможен — исходные файлы не хранятся.
+    """
+    by_name = {
+        s.name: s for s in (await session.scalars(select(Supplier))).all()
+    }
+    applied = 0
+    skipped: list[str] = []
+    for entry in payload:
+        sup = by_name.get(entry.name)
+        if sup is None:
+            skipped.append(entry.name)
+            continue
+        new_meta = dict(sup.meta or {})
+        if entry.transformations:
+            # валидируем через схему, отбрасывая мусор
+            new_meta["transformations"] = SupplierTransformations.model_validate(
+                entry.transformations
+            ).model_dump(exclude_none=True)
+        else:
+            new_meta.pop("transformations", None)
+        sup.meta = new_meta
+        prefix_changed = entry.prefix != sup.prefix
+        sup.prefix = entry.prefix
+        if prefix_changed and sup.prefix:
+            await backfill_supplier_skus(session, sup.id, sup.prefix)
+        applied += 1
+    await session.commit()
+    return SettingsImportResult(applied=applied, skipped_unknown=skipped)

@@ -24,6 +24,8 @@ import type {
   SupplierCreate,
   SupplierRead,
   SupplierUpdate,
+  SupplierTransformations,
+  SupplierSettings,
   VerifyRequest,
   VerifyResponse,
 } from "../types/api";
@@ -289,4 +291,48 @@ export const api = {
     }
     return (await response.json()) as ImportReport;
   },
+
+  // --- P3.6: ручная привязка прайс-позиции к карточке каталога ---
+
+  setCatalogLink: (itemId: string, catalogItemId: string | null) =>
+    request<{
+      item_id: string;
+      linked_catalog_item_id: string | null;
+      catalog_link_source: "auto" | "manual" | null;
+    }>(`/items/${itemId}/catalog-link`, {
+      method: "PATCH",
+      json: { catalog_item_id: catalogItemId },
+    }),
+
+  resetCatalogLinkAuto: (itemId: string) =>
+    request<unknown>(`/items/${itemId}/catalog-link/auto`, { method: "POST" }),
+
+  // --- P3.7: preview трансформаций прайса ---
+
+  previewTransform: (payload: {
+    transformations: SupplierTransformations;
+    name: string;
+    price?: number | null;
+    unit?: string | null;
+    currency?: string | null;
+    manufacturer?: string | null;
+  }) =>
+    request<{
+      name: string;
+      manufacturer: string | null;
+      price: string | null;
+      unit: string | null;
+      currency: string | null;
+    }>("/suppliers/preview-transform", { method: "POST", json: payload }),
+
+  // --- P3.8: экспорт/импорт настроек поставщиков ---
+
+  exportSupplierSettings: () =>
+    request<SupplierSettings[]>("/suppliers/settings/export"),
+
+  importSupplierSettings: (payload: SupplierSettings[]) =>
+    request<{ applied: number; skipped_unknown: string[] }>(
+      "/suppliers/settings/import",
+      { method: "POST", json: payload },
+    ),
 };

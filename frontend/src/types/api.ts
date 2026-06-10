@@ -367,6 +367,12 @@ export interface SupplierRead {
   pricelist_items_count: number;
 }
 
+export interface SupplierSettings {
+  name: string;
+  prefix?: string | null;
+  transformations?: Record<string, unknown> | null;
+}
+
 export interface PricelistSourceRead {
   id: string;
   name: string;
