@@ -20,6 +20,8 @@ from fasttender.models import (
     SpecificationStatus,
     SpecItem,
     Supplier,
+    Verification,
+    VerificationDecision,
 )
 from fasttender.models.enums import MatchType
 from fasttender.services.importer import CatalogImporter, ImportMode, PriceListImporter
@@ -253,6 +255,113 @@ async def test_reprocess_replaces_spec_items(
     spec_items = (await session.scalars(select(SpecItem).where(SpecItem.spec_id == spec.id))).all()
     # Та же одна позиция, не дублирована
     assert len(spec_items) == 1
+
+
+# --- Повторный матчинг неподтверждённых строк ---
+
+
+async def test_rematch_unconfirmed_keeps_confirmed_resets_rest(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """rematch_unconfirmed: подтверждённую строку не трогает, остальным
+    пересобирает кандидатов и сбрасывает неподтверждённое решение."""
+    await _seed_catalog_and_pricelist(session, tmp_path)
+    spec_file = make_xlsx(
+        tmp_path / "spec.xlsx",
+        rows=[
+            ["Наименование", "Артикул", "Кол-во"],
+            ["Болт М10х40", "BLT-M10-040", 50],
+            ["Гайка М10", "NUT-M10", 100],
+            ["Шайба М10", "WSH-M10", 10],
+        ],
+    )
+    spec = await _create_spec_from_file(session, spec_file)
+    await SpecificationProcessor(session).process(spec.id)
+
+    items = (
+        await session.scalars(
+            select(SpecItem)
+            .where(SpecItem.spec_id == spec.id)
+            .order_by(SpecItem.line_number)
+        )
+    ).all()
+    blt, nut, wsh = items
+
+    # blt — подтверждаем (выбираем топ-кандидата), nut — отклоняем, wsh — без решения.
+    blt_top = await session.scalar(
+        select(MatchCandidate)
+        .where(MatchCandidate.spec_item_id == blt.id, MatchCandidate.rank == 1)
+        .limit(1)
+    )
+    assert blt_top is not None
+    session.add(
+        Verification(
+            spec_item_id=blt.id,
+            chosen_item_id=blt_top.item_id,
+            decision=VerificationDecision.CONFIRMED,
+            decided_by="test",
+        )
+    )
+    session.add(
+        Verification(spec_item_id=nut.id, decision=VerificationDecision.REJECTED)
+    )
+    await session.commit()
+
+    # Кандидаты blt до повторного матчинга — должны сохраниться (id не меняются).
+    blt_cand_ids_before = set(
+        (
+            await session.scalars(
+                select(MatchCandidate.id).where(
+                    MatchCandidate.spec_item_id == blt.id
+                )
+            )
+        ).all()
+    )
+    assert blt_cand_ids_before
+
+    await SpecificationProcessor(session).rematch_unconfirmed(spec.id)
+
+    await session.refresh(spec)
+    assert spec.status is SpecificationStatus.REVIEWING
+    assert spec.matched_count == 3
+
+    # Подтверждённая строка: решение на месте, кандидаты те же (не пересобраны).
+    blt_verif = await session.scalar(
+        select(Verification).where(Verification.spec_item_id == blt.id)
+    )
+    assert blt_verif is not None
+    assert blt_verif.decision is VerificationDecision.CONFIRMED
+    blt_cand_ids_after = set(
+        (
+            await session.scalars(
+                select(MatchCandidate.id).where(
+                    MatchCandidate.spec_item_id == blt.id
+                )
+            )
+        ).all()
+    )
+    assert blt_cand_ids_after == blt_cand_ids_before
+
+    # Отклонённая строка: решение сброшено, кандидаты пересобраны заново.
+    nut_verif = await session.scalar(
+        select(Verification).where(Verification.spec_item_id == nut.id)
+    )
+    assert nut_verif is None
+    nut_cands = (
+        await session.scalars(
+            select(MatchCandidate).where(MatchCandidate.spec_item_id == nut.id)
+        )
+    ).all()
+    assert nut_cands  # кандидаты снова есть
+
+    # Строка без решения тоже получила кандидатов.
+    wsh_cands = (
+        await session.scalars(
+            select(MatchCandidate).where(MatchCandidate.spec_item_id == wsh.id)
+        )
+    ).all()
+    assert wsh_cands
 
 
 # --- Топ-N разбит правильно ---

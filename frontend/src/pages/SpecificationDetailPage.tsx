@@ -212,6 +212,22 @@ function DetailContent({ specId }: { specId: string }) {
       ),
   });
 
+  const rematchMutation = useMutation({
+    mutationFn: () => api.rematchSpecification(specId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({
+        queryKey: ["specifications", specId, "items"],
+      });
+    },
+    onError: (e) =>
+      window.alert(
+        e instanceof ApiError
+          ? `Не удалось запустить матчинг (ошибка ${e.status})`
+          : "Не удалось запустить повторный матчинг",
+      ),
+  });
+
   const autoConfirmMutation = useMutation({
     mutationFn: () =>
       api.autoConfirm(specId, {
@@ -365,6 +381,28 @@ function DetailContent({ specId }: { specId: string }) {
                     className="w-16 border-none bg-transparent py-1 text-sm focus:outline-none focus:ring-0"
                   />
                 </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Повторно подобрать кандидатов для всех строк, кроме " +
+                          "подтверждённых?\n\nПодтверждённые строки останутся " +
+                          "без изменений. У остальных кандидаты пересоберутся " +
+                          "заново, а прежнее решение «Отклонено» / «Не найдено» " +
+                          "/ «Новая позиция» будет сброшено.",
+                      )
+                    ) {
+                      rematchMutation.mutate();
+                    }
+                  }}
+                  disabled={rematchMutation.isPending}
+                  title="Перезапустить матчинг для строк, которые ещё не подтверждены"
+                >
+                  {rematchMutation.isPending
+                    ? "Запуск…"
+                    : "↻ Повторный матчинг"}
+                </Button>
                 <Button
                   variant="secondary"
                   onClick={() => autoConfirmMutation.mutate()}

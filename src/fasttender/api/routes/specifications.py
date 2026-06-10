@@ -63,6 +63,7 @@ from fasttender.services.export import ExportFormat, build_export
 from fasttender.services.parser import SpecificationParser
 from fasttender.services.verification import VerificationError, VerificationService
 from fasttender.tasks.process import process_specification
+from fasttender.tasks.process import rematch_specification as rematch_task
 
 router = APIRouter(prefix="/specifications", tags=["specifications"])
 
@@ -612,6 +613,63 @@ async def abort_specification(
 
     spec.status = SpecificationStatus.CANCELLED
     spec.error_message = "Обработка прервана пользователем"
+    await session.commit()
+    await session.refresh(spec)
+    return await _spec_read(session, spec)
+
+
+@router.post(
+    "/{spec_id}/rematch",
+    response_model=SpecificationRead,
+    summary="Повторный матчинг строк, которые ещё не подтверждены",
+)
+async def rematch_specification(
+    spec_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> SpecificationRead:
+    """Перезапускает матчинг ТОЛЬКО для не подтверждённых строк.
+
+    Парсинг не выполняется. Строки с решением `confirmed` остаются как есть;
+    у остальных кандидаты пересобираются заново, а прежнее неподтверждённое
+    решение (`rejected`/`not_found`/`new_item_requested`) сбрасывается.
+    Полезно, когда каталог/прайсы пополнили и нужно переподобрать остаток.
+    """
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+    if spec.status in _IN_PROGRESS_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Спецификация уже в обработке"},
+        )
+    items_total = await session.scalar(
+        select(func.count())
+        .select_from(SpecItem)
+        .where(SpecItem.spec_id == spec_id)
+    )
+    if not items_total:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"message": "Нет распарсенных строк — матчить нечего"},
+        )
+
+    # Ставим задачу ДО смены статуса: если брокер недоступен — спека остаётся
+    # в текущем статусе, а пользователь получит понятную ошибку.
+    try:
+        async_result = rematch_task.delay(str(spec.id))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"message": "Очередь задач недоступна, попробуйте позже"},
+        ) from exc
+
+    spec.meta = {**(spec.meta or {}), "task_id": async_result.id}
+    spec.status = SpecificationStatus.MATCHING
+    spec.matched_count = 0
+    spec.error_message = None
     await session.commit()
     await session.refresh(spec)
     return await _spec_read(session, spec)

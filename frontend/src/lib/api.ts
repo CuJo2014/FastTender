@@ -142,6 +142,12 @@ export const api = {
       { method: "POST" },
     ),
 
+  rematchSpecification: (specId: string) =>
+    request<SpecificationRead>(
+      `/specifications/${specId}/rematch`,
+      { method: "POST" },
+    ),
+
   deleteSpecification: (specId: string) =>
     request<void>(`/specifications/${specId}`, { method: "DELETE" }),
 

@@ -22,6 +22,8 @@ from fasttender.models import (
     Specification,
     SpecificationStatus,
     SpecItem,
+    Verification,
+    VerificationDecision,
 )
 from fasttender.repositories.pg_trgm import PgTrgmSearchRepository
 from fasttender.services.matcher import MatchingEngine
@@ -78,6 +80,32 @@ class SpecificationProcessor:
         except Exception as exc:  # ловим любую — статус и error_message пишем всегда
             logger.exception("pipeline.failed", spec_id=str(spec_id))
             await self._record_failure(spec, exc)
+            raise
+
+        return spec
+
+    async def rematch_unconfirmed(self, spec_id: UUID) -> Specification:
+        """Повторный матчинг ТОЛЬКО для ещё не подтверждённых строк.
+
+        Парсинг не выполняется — работаем по уже распарсенным SpecItem.
+        Строки с решением `confirmed` не трогаем (кандидаты и выбор менеджера
+        сохраняются). Для остальных: удаляем старых кандидатов, сбрасываем
+        неподтверждённое решение (`rejected`/`not_found`/`new_item_requested`
+        → строка снова «не верифицировано»), затем перематчиваем.
+
+        Сценарий: каталог/прайсы пополнили — нужно переподобрать оставшиеся
+        строки, не теряя уже проверенные менеджером.
+        """
+        spec = await self._load_spec(spec_id)
+        logger.info("pipeline.rematch.start", spec_id=str(spec_id))
+
+        try:
+            await self._rematch_unconfirmed(spec)
+        except Exception as exc:
+            logger.exception("pipeline.rematch.failed", spec_id=str(spec_id))
+            await self._record_failure(
+                spec, exc, status=SpecificationStatus.MATCH_FAILED
+            )
             raise
 
         return spec
@@ -160,6 +188,75 @@ class SpecificationProcessor:
         await self._session.commit()
 
         logger.info("pipeline.matched", spec_id=str(spec.id), items=len(spec_items))
+
+    async def _rematch_unconfirmed(self, spec: Specification) -> None:
+        # id строк с подтверждённым решением — их обходим стороной.
+        confirmed_ids = set(
+            (
+                await self._session.scalars(
+                    select(Verification.spec_item_id)
+                    .join(SpecItem, SpecItem.id == Verification.spec_item_id)
+                    .where(
+                        SpecItem.spec_id == spec.id,
+                        Verification.decision == VerificationDecision.CONFIRMED,
+                    )
+                )
+            ).all()
+        )
+
+        spec_items = (
+            await self._session.scalars(
+                select(SpecItem)
+                .where(SpecItem.spec_id == spec.id)
+                .order_by(SpecItem.line_number)
+            )
+        ).all()
+        targets = [si for si in spec_items if si.id not in confirmed_ids]
+        target_ids = [si.id for si in targets]
+
+        await self._transition(spec, SpecificationStatus.MATCHING)
+        # Прогресс отсчитываем от уже подтверждённых строк — полоса в UI едет
+        # только по реально перематчиваемым (base..total).
+        base = len(spec_items) - len(targets)
+        spec.matched_count = base
+        await self._session.commit()
+
+        # Сбрасываем неподтверждённые решения и старых кандидатов разом — строки
+        # вернутся в «не верифицировано» со свежим подбором.
+        if target_ids:
+            await self._session.execute(
+                delete(Verification).where(
+                    Verification.spec_item_id.in_(target_ids)
+                )
+            )
+            await self._session.execute(
+                delete(MatchCandidate).where(
+                    MatchCandidate.spec_item_id.in_(target_ids)
+                )
+            )
+            await self._session.commit()
+
+        processed = base
+        for spec_item in targets:
+            match_input = match_input_from_spec_item(spec_item)
+            result = await self._matcher.match(match_input, top_n=self._top_n)
+            self._persist_candidates(spec_item.id, result)
+            processed += 1
+            if (processed - base) % self._PROGRESS_BATCH == 0:
+                spec.matched_count = processed
+                await self._session.commit()
+
+        spec.matched_count = len(spec_items)
+        await self._transition(spec, SpecificationStatus.REVIEWING)
+        spec.completed_at = datetime.now(UTC)
+        await self._session.commit()
+
+        logger.info(
+            "pipeline.rematch.done",
+            spec_id=str(spec.id),
+            rematched=len(targets),
+            kept_confirmed=len(confirmed_ids),
+        )
 
     # --- Утилиты ---
 
@@ -248,8 +345,19 @@ async def process_specification_by_id(session: AsyncSession, spec_id: UUID) -> S
     return await SpecificationProcessor(session).process(spec_id)
 
 
+async def rematch_unconfirmed_by_id(
+    session: AsyncSession, spec_id: UUID
+) -> Specification:
+    """Шорткат: повторный матчинг неподтверждённых строк (Celery/тесты)."""
+    return await SpecificationProcessor(session).rematch_unconfirmed(spec_id)
+
+
 # Re-export для удобства
-__all__ = ["SpecificationProcessor", "process_specification_by_id"]
+__all__ = [
+    "SpecificationProcessor",
+    "process_specification_by_id",
+    "rematch_unconfirmed_by_id",
+]
 
 
 # Защита от случайного использования Path
