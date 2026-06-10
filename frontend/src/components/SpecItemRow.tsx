@@ -20,6 +20,9 @@ interface Props {
   defaultExpanded?: boolean;
   /** px-смещение для «прилипания» строки при разворачивании (под шапкой). */
   stickyTop?: number;
+  /** Массовый выбор: строка отмечена / переключатель. */
+  selected?: boolean;
+  onToggleSelect?: (specItemId: string) => void;
 }
 
 export function SpecItemRow({
@@ -30,6 +33,8 @@ export function SpecItemRow({
   pending,
   defaultExpanded = false,
   stickyTop = 0,
+  selected = false,
+  onToggleSelect,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
@@ -66,6 +71,17 @@ export function SpecItemRow({
           (item.verification ? "bg-slate-50/40" : "")
         }
       >
+        <td className={`${td} text-center${tdSticky}`} style={stickyStyle}>
+          {onToggleSelect && (
+            <input
+              type="checkbox"
+              aria-label={`Выбрать строку ${item.line_number}`}
+              checked={selected}
+              onChange={() => onToggleSelect(item.id)}
+              className="cursor-pointer"
+            />
+          )}
+        </td>
         <td
           className={`${td} tabular-nums text-slate-500${tdSticky}`}
           style={stickyStyle}
@@ -195,7 +211,7 @@ export function SpecItemRow({
 
       {expanded && (
         <tr>
-          <td colSpan={7} className="bg-slate-50 px-4 py-4">
+          <td colSpan={8} className="bg-slate-50 px-4 py-4">
             <div className="space-y-3">
               {/* Поиск — наверху, предзаполнен именем позиции. Контекст
                   (что подбираем) виден в «прилипшей» строке товара выше. */}

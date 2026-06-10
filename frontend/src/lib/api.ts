@@ -4,6 +4,8 @@
 import type {
   AutoConfirmRequest,
   AutoConfirmResponse,
+  BulkVerifyResponse,
+  VerificationDecision,
   CatalogInfo,
   ClientCreate,
   ClientRead,
@@ -140,6 +142,16 @@ export const api = {
     request<AutoConfirmResponse>(
       `/specifications/${specId}/auto-confirm`,
       { method: "POST", json: payload },
+    ),
+
+  bulkVerifyItems: (
+    specId: string,
+    itemIds: string[],
+    decision: VerificationDecision,
+  ) =>
+    request<BulkVerifyResponse>(
+      `/specifications/${specId}/items/bulk-verify`,
+      { method: "POST", json: { item_ids: itemIds, decision } },
     ),
 
   cancelSpecification: (specId: string, reason?: string) =>

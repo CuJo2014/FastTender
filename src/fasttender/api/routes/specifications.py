@@ -58,6 +58,8 @@ from fasttender.schemas.specification import (
 from fasttender.schemas.verification import (
     AutoConfirmRequest,
     AutoConfirmResponse,
+    BulkVerifyRequest,
+    BulkVerifyResponse,
     VerifyRequest,
     VerifyResponse,
 )
@@ -774,6 +776,22 @@ async def auto_confirm_specification(
     )
 
     service = VerificationService(session)
+    if payload.dry_run:
+        # Только счётчик «Авто-подтвердить (N)» — ничего не пишем и не коммитим.
+        confirmed, skipped_existing, skipped_low = (
+            await service.count_auto_confirm_targets(
+                spec_id=spec_id,
+                min_confidence=threshold,
+                only_unverified=payload.only_unverified,
+            )
+        )
+        return AutoConfirmResponse(
+            confirmed_count=confirmed,
+            skipped_already_verified=skipped_existing,
+            skipped_below_threshold=skipped_low,
+            threshold_used=threshold,
+        )
+
     confirmed, skipped_existing, skipped_low = await service.auto_confirm(
         spec_id=spec_id,
         min_confidence=threshold,
@@ -781,12 +799,62 @@ async def auto_confirm_specification(
         only_unverified=payload.only_unverified,
     )
     await session.commit()
+    # Все строки получили решение → статус VERIFIED (как в одиночном verify).
+    await _auto_promote_to_verified(session, spec_id)
+    await session.commit()
 
     return AutoConfirmResponse(
         confirmed_count=confirmed,
         skipped_already_verified=skipped_existing,
         skipped_below_threshold=skipped_low,
         threshold_used=threshold,
+    )
+
+
+@router.post(
+    "/{spec_id}/items/bulk-verify",
+    response_model=BulkVerifyResponse,
+    summary="Массовое решение по выбранным строкам",
+)
+async def bulk_verify_items(
+    spec_id: UUID,
+    payload: BulkVerifyRequest,
+    session: AsyncSession = Depends(get_session),
+) -> BulkVerifyResponse:
+    """Применяет решение к набору строк (чекбоксы в UI).
+
+    CONFIRMED подтверждает топ-кандидата каждой строки; строки без кандидата
+    пропускаются. Прочие решения применяются ко всем выбранным.
+    """
+    spec = await session.get(Specification, spec_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": "Спецификация не найдена"},
+        )
+
+    service = VerificationService(session)
+    try:
+        applied, skipped_no_candidate = await service.bulk_verify(
+            spec_id=spec_id,
+            spec_item_ids=payload.item_ids,
+            decision=payload.decision,
+            decided_by=payload.decided_by,
+        )
+    except VerificationError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"message": str(exc)},
+        ) from exc
+
+    await session.commit()
+    await _auto_promote_to_verified(session, spec_id)
+    await session.commit()
+
+    return BulkVerifyResponse(
+        applied=applied,
+        skipped_no_candidate=skipped_no_candidate,
     )
 
 

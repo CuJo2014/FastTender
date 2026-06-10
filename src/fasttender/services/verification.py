@@ -8,10 +8,12 @@ Verification — единственная запись на SpecItem (unique con
 словарей синонимов (раздел 9.5), пока — просто фиксация решения.
 """
 
+from collections.abc import Collection, Sequence
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from fasttender.core.logging import get_logger
 from fasttender.models import (
@@ -109,15 +111,157 @@ class VerificationService:
 
         Возвращает (confirmed_count, skipped_already_verified, skipped_below_threshold).
         """
-        # Все строки спецификации
-        spec_items = (
-            await self._session.scalars(select(SpecItem).where(SpecItem.spec_id == spec_id))
-        ).all()
-        spec_item_ids = [s.id for s in spec_items]
-        if not spec_item_ids:
-            return 0, 0, 0
+        targets, skipped_existing, skipped_low = await self._select_auto_confirm_targets(
+            spec_id=spec_id,
+            min_confidence=min_confidence,
+            only_unverified=only_unverified,
+        )
+        for spec_item_id, item_id in targets:
+            self._session.add(
+                Verification(
+                    spec_item_id=spec_item_id,
+                    decision=VerificationDecision.CONFIRMED,
+                    chosen_item_id=item_id,
+                    decided_by=decided_by,
+                )
+            )
+        await self._session.flush()
+        return len(targets), skipped_existing, skipped_low
 
-        # Существующие верификации (для only_unverified)
+    async def count_auto_confirm_targets(
+        self,
+        *,
+        spec_id: UUID,
+        min_confidence: float,
+        only_unverified: bool = True,
+    ) -> tuple[int, int, int]:
+        """Dry-run: сколько строк затронуло бы авто-подтверждение (без записи).
+
+        Возвращает тот же кортеж, что и auto_confirm, но ничего не меняет —
+        для счётчика «Авто-подтвердить (N)» в UI.
+        """
+        targets, skipped_existing, skipped_low = await self._select_auto_confirm_targets(
+            spec_id=spec_id,
+            min_confidence=min_confidence,
+            only_unverified=only_unverified,
+        )
+        return len(targets), skipped_existing, skipped_low
+
+    async def bulk_verify(
+        self,
+        *,
+        spec_id: UUID,
+        spec_item_ids: Sequence[UUID],
+        decision: VerificationDecision,
+        decided_by: str | None = None,
+    ) -> tuple[int, int]:
+        """Массовое решение по явно выбранным строкам.
+
+        Для CONFIRMED подтверждает топ-кандидата каждой строки (каталог
+        приоритетнее прайсов); строки без кандидата пропускает. Для прочих
+        решений (rejected/…) применяет ко всем выбранным.
+
+        Возвращает (applied, skipped_no_candidate).
+        """
+        if not spec_item_ids:
+            return 0, 0
+
+        # Только строки, реально принадлежащие этой спеке (чужие/несуществующие
+        # молча игнорируем — UI мог прислать устаревший выбор).
+        valid_ids = set(
+            (
+                await self._session.scalars(
+                    select(SpecItem.id).where(
+                        SpecItem.id.in_(spec_item_ids), SpecItem.spec_id == spec_id
+                    )
+                )
+            ).all()
+        )
+
+        best_per_item: dict[UUID, MatchCandidate] = {}
+        if decision is VerificationDecision.CONFIRMED:
+            best_per_item = await self._best_candidate_per_item(valid_ids)
+
+        applied = 0
+        skipped_no_candidate = 0
+        for sid in spec_item_ids:
+            if sid not in valid_ids:
+                continue
+            chosen_item_id: UUID | None = None
+            if decision is VerificationDecision.CONFIRMED:
+                best = best_per_item.get(sid)
+                if best is None:
+                    skipped_no_candidate += 1
+                    continue
+                chosen_item_id = best.item_id
+            await self.upsert(
+                spec_id=spec_id,
+                spec_item_id=sid,
+                decision=decision,
+                chosen_item_id=chosen_item_id,
+                decided_by=decided_by,
+            )
+            applied += 1
+        return applied, skipped_no_candidate
+
+    # --- Внутренние ---
+
+    async def _best_candidate_per_item(
+        self, spec_item_ids: Collection[UUID]
+    ) -> dict[UUID, MatchCandidate]:
+        """Топ-кандидат на строку (rank=1): каталог приоритетнее прайсов,
+        внутри одного типа — по убыванию confidence."""
+        if not spec_item_ids:
+            return {}
+        candidates = (
+            await self._session.scalars(
+                select(MatchCandidate)
+                .where(
+                    MatchCandidate.spec_item_id.in_(spec_item_ids),
+                    MatchCandidate.rank == 1,
+                )
+                .options(selectinload(MatchCandidate.item).selectinload(Item.source))
+            )
+        ).all()
+
+        best_per_item: dict[UUID, MatchCandidate] = {}
+        for cand in candidates:
+            current = best_per_item.get(cand.spec_item_id)
+            cand_priority = (
+                0 if cand.item.source.type is DataSourceType.COMPANY_CATALOG else 1
+            )
+            if current is None:
+                best_per_item[cand.spec_item_id] = cand
+                continue
+            current_priority = (
+                0 if current.item.source.type is DataSourceType.COMPANY_CATALOG else 1
+            )
+            if cand_priority < current_priority or (
+                cand_priority == current_priority
+                and cand.confidence > current.confidence
+            ):
+                best_per_item[cand.spec_item_id] = cand
+        return best_per_item
+
+    async def _select_auto_confirm_targets(
+        self,
+        *,
+        spec_id: UUID,
+        min_confidence: float,
+        only_unverified: bool,
+    ) -> tuple[list[tuple[UUID, UUID]], int, int]:
+        """Строки под авто-подтверждение: (spec_item_id, chosen_item_id) +
+        счётчики пропусков. Общая основа для apply (auto_confirm) и dry-run."""
+        spec_item_ids = list(
+            (
+                await self._session.scalars(
+                    select(SpecItem.id).where(SpecItem.spec_id == spec_id)
+                )
+            ).all()
+        )
+        if not spec_item_ids:
+            return [], 0, 0
+
         already_verified: set[UUID] = set()
         if only_unverified:
             rows = await self._session.scalars(
@@ -127,40 +271,11 @@ class VerificationService:
             )
             already_verified = set(rows.all())
 
-        # Тянем кандидатов с rank=1 + информацию об источнике
-        from sqlalchemy.orm import selectinload
+        best_per_item = await self._best_candidate_per_item(spec_item_ids)
 
-        candidate_stmt = (
-            select(MatchCandidate)
-            .where(
-                MatchCandidate.spec_item_id.in_(spec_item_ids),
-                MatchCandidate.rank == 1,
-            )
-            .options(selectinload(MatchCandidate.item).selectinload(Item.source))
-        )
-        candidates = (await self._session.scalars(candidate_stmt)).all()
-
-        # Группируем: для каждого spec_item — лучший catalog кандидат, затем supplier
-        best_per_item: dict[UUID, MatchCandidate] = {}
-        for cand in candidates:
-            current = best_per_item.get(cand.spec_item_id)
-            cand_priority = 0 if cand.item.source.type is DataSourceType.COMPANY_CATALOG else 1
-            if current is None:
-                best_per_item[cand.spec_item_id] = cand
-                continue
-            current_priority = (
-                0 if current.item.source.type is DataSourceType.COMPANY_CATALOG else 1
-            )
-            # Берём catalog приоритетнее supplier; внутри одного типа — по confidence
-            if cand_priority < current_priority or (
-                cand_priority == current_priority and cand.confidence > current.confidence
-            ):
-                best_per_item[cand.spec_item_id] = cand
-
-        confirmed = 0
+        targets: list[tuple[UUID, UUID]] = []
         skipped_existing = 0
         skipped_low = 0
-
         for spec_item_id in spec_item_ids:
             if spec_item_id in already_verified:
                 skipped_existing += 1
@@ -169,21 +284,8 @@ class VerificationService:
             if best is None or float(best.confidence) < min_confidence:
                 skipped_low += 1
                 continue
-
-            self._session.add(
-                Verification(
-                    spec_item_id=spec_item_id,
-                    decision=VerificationDecision.CONFIRMED,
-                    chosen_item_id=best.item_id,
-                    decided_by=decided_by,
-                )
-            )
-            confirmed += 1
-
-        await self._session.flush()
-        return confirmed, skipped_existing, skipped_low
-
-    # --- Внутренние ---
+            targets.append((spec_item_id, best.item_id))
+        return targets, skipped_existing, skipped_low
 
     async def _load_spec_item(self, spec_id: UUID, spec_item_id: UUID) -> SpecItem:
         spec_item = await self._session.get(SpecItem, spec_item_id)

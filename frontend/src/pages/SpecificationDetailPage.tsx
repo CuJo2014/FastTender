@@ -24,6 +24,7 @@ import { useColumnWidths } from "../hooks/useColumnWidths";
 
 // Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
 const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
+  { id: "check", label: "", default: 40 },
   { id: "num", label: "№", default: 44 },
   { id: "source", label: "Исходная позиция", default: 360 },
   { id: "qty", label: "Кол-во", default: 92 },
@@ -62,6 +63,25 @@ function DetailContent({ specId }: { specId: string }) {
   // Сегментный фильтр и сортировка строк (серверные — пагинация серверная).
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [sortBy, setSortBy] = useState<SortBy>("line_number");
+  // Массовый выбор строк (id'шники spec_item). Сбрасывается при смене
+  // страницы/фильтра — чтобы не применять решение к невидимым строкам.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Дебаунс порога для счётчика «Авто-подтвердить (N)» (dry-run на бэке).
+  const [debouncedThreshold, setDebouncedThreshold] = useState("0.9");
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedThreshold(autoConfirmThreshold), 300);
+    return () => clearTimeout(t);
+  }, [autoConfirmThreshold]);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+  const toggleSelect = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы и
   // развёрнутая строка товара приклеивались ровно ниже неё (без перекрытия).
@@ -161,6 +181,12 @@ function DetailContent({ specId }: { specId: string }) {
     },
   });
 
+  const resultsReady =
+    specQuery.data?.status === "matched" ||
+    specQuery.data?.status === "verified" ||
+    specQuery.data?.status === "exported" ||
+    specQuery.data?.status === "reviewing";
+
   const itemsQuery = useQuery({
     queryKey: ["specifications", specId, "items", page, pageSize, statusFilter, sortBy],
     queryFn: () =>
@@ -168,15 +194,47 @@ function DetailContent({ specId }: { specId: string }) {
         status: statusFilter,
         sort: sortBy,
       }),
-    enabled: specQuery.data?.status === "matched"
-      || specQuery.data?.status === "verified"
-      || specQuery.data?.status === "exported"
-      || specQuery.data?.status === "reviewing",
+    enabled: resultsReady,
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data || !data.items) return false;
       return false;
     },
+  });
+
+  // Счётчик «Авто-подтвердить (N)» — dry-run, ключ начинается с
+  // ["specifications", specId, …], поэтому инвалидируется вместе с остальным
+  // при любом решении (verify/bulk/auto-confirm).
+  const thresholdNum = Number(debouncedThreshold);
+  const autoConfirmPreview = useQuery({
+    queryKey: ["specifications", specId, "auto-confirm-preview", debouncedThreshold],
+    queryFn: () =>
+      api.autoConfirm(specId, { min_confidence: thresholdNum, dry_run: true }),
+    enabled: resultsReady && debouncedThreshold !== "" && !Number.isNaN(thresholdNum),
+  });
+  const autoConfirmN = autoConfirmPreview.data?.confirmed_count ?? null;
+
+  const bulkMutation = useMutation({
+    mutationFn: (decision: VerificationDecision) =>
+      api.bulkVerifyItems(specId, [...selected], decision),
+    onSuccess: (res) => {
+      clearSelection();
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
+      queryClient.invalidateQueries({
+        queryKey: ["specifications", specId, "items"],
+      });
+      if (res.skipped_no_candidate > 0) {
+        window.alert(
+          `Применено: ${res.applied}. Пропущено без кандидата: ${res.skipped_no_candidate}`,
+        );
+      }
+    },
+    onError: (e) =>
+      window.alert(
+        e instanceof ApiError
+          ? `Ошибка массового решения (${e.status})`
+          : "Не удалось применить массовое решение",
+      ),
   });
 
   const verifyMutation = useMutation({
@@ -281,6 +339,20 @@ function DetailContent({ specId }: { specId: string }) {
 
   const isReady = !isInProgress(spec.status);
   const items = itemsQuery.data?.items ?? [];
+
+  // Select-all действует только на видимые (текущая страница).
+  const visibleIds = items.map((i) => i.id);
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const someVisibleSelected = visibleIds.some((id) => selected.has(id));
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -393,11 +465,16 @@ function DetailContent({ specId }: { specId: string }) {
                 <Button
                   variant="secondary"
                   onClick={() => autoConfirmMutation.mutate()}
-                  disabled={autoConfirmMutation.isPending}
+                  disabled={autoConfirmMutation.isPending || autoConfirmN === 0}
+                  title={
+                    autoConfirmN === 0
+                      ? "Нет строк с уверенностью ≥ порога"
+                      : "Подтвердить топ-кандидата для строк с уверенностью ≥ порога"
+                  }
                 >
                   {autoConfirmMutation.isPending
                     ? "Подтверждение…"
-                    : "Авто-подтвердить"}
+                    : `Авто-подтвердить${autoConfirmN != null ? ` (${autoConfirmN})` : ""}`}
                 </Button>
                 <a
                   href={api.exportUrl(specId, "xlsx")}
@@ -441,12 +518,45 @@ function DetailContent({ specId }: { specId: string }) {
             onStatus={(s) => {
               setStatusFilter(s);
               setPage(1);
+              clearSelection();
             }}
             onSort={(s) => {
               setSortBy(s);
               setPage(1);
+              clearSelection();
             }}
           />
+
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm">
+              <span className="font-medium text-blue-800">
+                {selected.size} выбрано
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => bulkMutation.mutate("confirmed")}
+                disabled={bulkMutation.isPending}
+              >
+                ✓ Подтвердить
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => bulkMutation.mutate("rejected")}
+                disabled={bulkMutation.isPending}
+              >
+                ✕ Отклонить
+              </Button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="ml-auto text-slate-500 hover:underline"
+              >
+                Снять выбор
+              </button>
+            </div>
+          )}
 
           {itemsQuery.isLoading ? (
             <div className="px-6 py-8 text-center text-slate-500">
@@ -478,23 +588,44 @@ function DetailContent({ specId }: { specId: string }) {
                       совместимости (Safari/старый Firefox требуют именно так).
                       top = высота шапки спеки + 56px (header h-14). */}
                   <tr>
-                    {SPEC_COLUMNS.map((col) => (
-                      <th
-                        key={col.id}
-                        className="sticky z-10 bg-slate-50 px-4 py-3 font-medium shadow-sm relative select-none overflow-hidden text-ellipsis"
-                        style={{ top: stickyHeaderHeight + 56 }}
-                      >
-                        {col.label}
-                        {/* Ручка ресайза на правом крае: тянуть — менять
-                            ширину, двойной клик — сбросить эту колонку. */}
-                        <span
-                          onMouseDown={startResize(col.id)}
-                          onDoubleClick={() => resetWidth(col.id)}
-                          className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300"
-                          title="Тянуть — ширина; двойной клик — сбросить"
-                        />
-                      </th>
-                    ))}
+                    {SPEC_COLUMNS.map((col) =>
+                      col.id === "check" ? (
+                        <th
+                          key={col.id}
+                          className="sticky z-10 bg-slate-50 px-4 py-3 text-center shadow-sm"
+                          style={{ top: stickyHeaderHeight + 56 }}
+                        >
+                          <input
+                            type="checkbox"
+                            aria-label="Выбрать все видимые строки"
+                            checked={allVisibleSelected}
+                            ref={(el) => {
+                              if (el)
+                                el.indeterminate =
+                                  someVisibleSelected && !allVisibleSelected;
+                            }}
+                            onChange={toggleSelectAllVisible}
+                            className="cursor-pointer"
+                          />
+                        </th>
+                      ) : (
+                        <th
+                          key={col.id}
+                          className="sticky z-10 bg-slate-50 px-4 py-3 font-medium shadow-sm relative select-none overflow-hidden text-ellipsis"
+                          style={{ top: stickyHeaderHeight + 56 }}
+                        >
+                          {col.label}
+                          {/* Ручка ресайза на правом крае: тянуть — менять
+                              ширину, двойной клик — сбросить эту колонку. */}
+                          <span
+                            onMouseDown={startResize(col.id)}
+                            onDoubleClick={() => resetWidth(col.id)}
+                            className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300"
+                            title="Тянуть — ширина; двойной клик — сбросить"
+                          />
+                        </th>
+                      ),
+                    )}
                   </tr>
                 </thead>
                 <tbody>
@@ -503,6 +634,8 @@ function DetailContent({ specId }: { specId: string }) {
                       key={item.id}
                       item={item}
                       pending={verifyMutation.isPending || unverifyMutation.isPending}
+                      selected={selected.has(item.id)}
+                      onToggleSelect={toggleSelect}
                       // Строка «прилипает» под шапкой таблицы (nav 56 + шапка
                       // спеки + высота thead ~41) при разворачивании.
                       stickyTop={stickyHeaderHeight + 56 + 41}
@@ -527,10 +660,14 @@ function DetailContent({ specId }: { specId: string }) {
                 page={page}
                 pageSize={pageSize}
                 total={itemsQuery.data?.total ?? 0}
-                onPageChange={setPage}
+                onPageChange={(p) => {
+                  setPage(p);
+                  clearSelection();
+                }}
                 onPageSizeChange={(s) => {
                   setPageSize(s);
                   setPage(1);
+                  clearSelection();
                 }}
               />
             </div>

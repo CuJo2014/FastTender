@@ -56,6 +56,10 @@ class AutoConfirmRequest(BaseModel):
         default=True,
         description="Не трогать строки, по которым уже есть Verification",
     )
+    dry_run: bool = Field(
+        default=False,
+        description="Только посчитать целевые строки, ничего не подтверждать",
+    )
 
 
 class AutoConfirmResponse(BaseModel):
@@ -65,3 +69,22 @@ class AutoConfirmResponse(BaseModel):
     skipped_already_verified: int = 0
     skipped_below_threshold: int = 0
     threshold_used: float
+
+
+class BulkVerifyRequest(BaseModel):
+    """Массовое решение по явно выбранным строкам (чекбоксы в UI).
+
+    Для CONFIRMED подтверждается топ-кандидат каждой строки; строки без
+    кандидата пропускаются (см. skipped_no_candidate в ответе).
+    """
+
+    item_ids: list[UUID] = Field(default_factory=list)
+    decision: VerificationDecision
+    decided_by: str | None = Field(default=None, max_length=255)
+
+
+class BulkVerifyResponse(BaseModel):
+    """Результат массового решения по выбранным строкам."""
+
+    applied: int = 0
+    skipped_no_candidate: int = 0

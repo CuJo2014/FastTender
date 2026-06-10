@@ -8,7 +8,7 @@ async, и его поведение проще верифицировать бе
 from pathlib import Path
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,6 +33,7 @@ from fasttender.models.enums import MatchType
 from fasttender.services.importer import CatalogImporter, ImportMode, PriceListImporter
 from fasttender.services.parser import ParseError
 from fasttender.services.pipeline import SpecificationProcessor
+from fasttender.services.verification import VerificationService
 from tests.fixtures.spec_builders import make_xlsx
 
 
@@ -315,6 +316,109 @@ async def test_counts_split_low_vs_no_candidate(
     assert counts2.items_no_candidate == counts.items_no_candidate + 1
     assert counts2.items_low == counts.items_low
     assert counts2.items_not_found == counts2.items_low + counts2.items_no_candidate
+
+
+# --- Массовые операции и dry-run авто-подтверждения ---
+
+
+async def test_bulk_verify_confirm_skips_no_candidate_and_reject_applies(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    await _seed_catalog_and_pricelist(session, tmp_path)
+    spec_file = make_xlsx(
+        tmp_path / "spec.xlsx",
+        rows=[
+            ["Наименование", "Артикул", "Кол-во"],
+            ["Болт М10х40", "BLT-M10-040", 50],
+            ["Гайка М10", "NUT-M10", 100],
+            ["Шайба М10", "WSH-M10", 10],
+        ],
+    )
+    spec = await _create_spec_from_file(session, spec_file)
+    await SpecificationProcessor(session).process(spec.id)
+    blt, nut, wsh = (
+        await session.scalars(
+            select(SpecItem)
+            .where(SpecItem.spec_id == spec.id)
+            .order_by(SpecItem.line_number)
+        )
+    ).all()
+    # wsh — без кандидатов.
+    await session.execute(
+        delete(MatchCandidate).where(MatchCandidate.spec_item_id == wsh.id)
+    )
+    await session.commit()
+
+    service = VerificationService(session)
+    applied, skipped = await service.bulk_verify(
+        spec_id=spec.id,
+        spec_item_ids=[blt.id, nut.id, wsh.id],
+        decision=VerificationDecision.CONFIRMED,
+    )
+    await session.commit()
+    assert applied == 2  # blt, nut
+    assert skipped == 1  # wsh без кандидата
+
+    blt_v = await session.scalar(
+        select(Verification).where(Verification.spec_item_id == blt.id)
+    )
+    assert blt_v is not None
+    assert blt_v.decision is VerificationDecision.CONFIRMED
+    assert blt_v.chosen_item_id is not None
+    # wsh решения не получила (пропущена).
+    assert (
+        await session.scalar(
+            select(Verification).where(Verification.spec_item_id == wsh.id)
+        )
+        is None
+    )
+
+    # Отклонение применяется и к строке без кандидата.
+    applied2, skipped2 = await service.bulk_verify(
+        spec_id=spec.id,
+        spec_item_ids=[wsh.id],
+        decision=VerificationDecision.REJECTED,
+    )
+    await session.commit()
+    assert applied2 == 1
+    assert skipped2 == 0
+    wsh_v = await session.scalar(
+        select(Verification).where(Verification.spec_item_id == wsh.id)
+    )
+    assert wsh_v is not None
+    assert wsh_v.decision is VerificationDecision.REJECTED
+
+
+async def test_auto_confirm_dry_run_counts_without_writing(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    await _seed_catalog_and_pricelist(session, tmp_path)
+    spec_file = make_xlsx(
+        tmp_path / "spec.xlsx",
+        rows=[
+            ["Наименование", "Артикул", "Кол-во"],
+            ["Болт М10х40", "BLT-M10-040", 50],
+            ["Гайка М10", "NUT-M10", 100],
+        ],
+    )
+    spec = await _create_spec_from_file(session, spec_file)
+    await SpecificationProcessor(session).process(spec.id)
+
+    service = VerificationService(session)
+    count, _, _ = await service.count_auto_confirm_targets(
+        spec_id=spec.id, min_confidence=0.9
+    )
+    assert count == 2  # оба exact-article → high
+    # Dry-run ничего не записал.
+    written = await session.scalar(
+        select(func.count())
+        .select_from(Verification)
+        .join(SpecItem, SpecItem.id == Verification.spec_item_id)
+        .where(SpecItem.spec_id == spec.id)
+    )
+    assert written == 0
 
 
 # --- Серверные фильтр и сортировка строк (GET /items) ---

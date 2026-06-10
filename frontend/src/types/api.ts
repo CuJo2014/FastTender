@@ -217,6 +217,7 @@ export interface AutoConfirmRequest {
   min_confidence?: number | null;
   decided_by?: string | null;
   only_unverified?: boolean;
+  dry_run?: boolean;
 }
 
 export interface AutoConfirmResponse {
@@ -224,6 +225,11 @@ export interface AutoConfirmResponse {
   skipped_already_verified: number;
   skipped_below_threshold: number;
   threshold_used: number;
+}
+
+export interface BulkVerifyResponse {
+  applied: number;
+  skipped_no_candidate: number;
 }
 
 // --- Gold dataset ---
