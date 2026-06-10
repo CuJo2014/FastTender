@@ -176,3 +176,51 @@ async def test_search_exact_matches_above_ilike(
     assert resp.status_code == 200
     data = resp.json()
     assert data[0]["code_1c"] == "Ц0000000200"
+
+
+async def test_catalog_not_pushed_out_by_pricelists_for_name_query(
+    client: AsyncClient, committed_db: AsyncSession, tmp_path: Path
+) -> None:
+    """Регрессия: прайсы (code_1c IS NULL) не должны вытеснять каталог из топ-N.
+
+    Был баг сортировки: `(code_1c == q).desc()` ставил NULL первыми (NULLS
+    FIRST) → прайсы всплывали выше каталога. Теперь COALESCE → каталог первым.
+    """
+    from fasttender.models import Supplier
+    from fasttender.services.importer import PriceListImporter
+
+    catalog = make_xlsx(
+        tmp_path / "cat.xlsx",
+        rows=[
+            ["Артикул", "Код", "Наименование", "Цена"],
+            ["MOL-1", "Ц0000009999", "Молоток слесарный 500г", "100"],
+        ],
+    )
+    await CatalogImporter().import_file(committed_db, catalog, mode=ImportMode.REPLACE)
+    await committed_db.commit()
+
+    supplier = Supplier(name="ООО Прайс", meta={})
+    committed_db.add(supplier)
+    await committed_db.flush()
+    pricelist = make_xlsx(
+        tmp_path / "pl.xlsx",
+        rows=[
+            ["Артикул", "Наименование", "Цена"],
+            ["P1", "Молоток A", "10"],
+            ["P2", "Молоток B", "11"],
+            ["P3", "Молоток C", "12"],
+        ],
+    )
+    await PriceListImporter().import_file(
+        committed_db, supplier_id=supplier.id, path=pricelist, mode=ImportMode.REPLACE
+    )
+    await committed_db.commit()
+
+    # limit=2: при баге каталог вытеснялся бы тремя прайс-молотками
+    r = await client.get("/api/v1/catalog/search", params={"q": "Молоток", "limit": 2})
+    assert r.status_code == 200
+    results = r.json()
+    assert results, "ожидали результаты"
+    # Каталог идёт первым и присутствует в выдаче
+    assert results[0]["source_type"] == "company_catalog"
+    assert any(x["source_type"] == "company_catalog" for x in results)

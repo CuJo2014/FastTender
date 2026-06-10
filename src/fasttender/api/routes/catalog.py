@@ -168,10 +168,13 @@ async def search_catalog(
             | Item.name.ilike(name_pattern),
         )
         .order_by(
-            # Точные code/sku/article выше, каталог выше прайсов, потом по имени
-            (Item.code_1c == query).desc(),
-            (Item.supplier_sku == query).desc(),
-            (Item.article_normalized == article_query).desc(),
+            # Точные code/sku/article выше, каталог выше прайсов, потом по имени.
+            # COALESCE обязателен: без него у строк с NULL в колонке булево
+            # сравнение даёт NULL, а `.desc()` ставит NULL первыми (NULLS FIRST) —
+            # из-за этого прайсы (code_1c IS NULL) вытесняли каталог из топ-N.
+            (func.coalesce(Item.code_1c, "") == query).desc(),
+            (func.coalesce(Item.supplier_sku, "") == query).desc(),
+            (func.coalesce(Item.article_normalized, "") == article_query).desc(),
             (DataSource.type == DataSourceType.COMPANY_CATALOG).desc(),
             Item.name,
         )
