@@ -87,10 +87,22 @@ export const api = {
   getSpecification: (id: string) =>
     request<SpecificationRead>(`/specifications/${id}`),
 
-  getSpecificationItems: (id: string, page = 1, pageSize = 50) =>
-    request<PaginatedSpecItems>(
-      `/specifications/${id}/items?page=${page}&page_size=${pageSize}`,
-    ),
+  getSpecificationItems: (
+    id: string,
+    page = 1,
+    pageSize = 50,
+    opts?: { status?: string; sort?: string },
+  ) => {
+    const params = new URLSearchParams({
+      page: String(page),
+      page_size: String(pageSize),
+    });
+    if (opts?.status && opts.status !== "all") params.set("status", opts.status);
+    if (opts?.sort && opts.sort !== "line_number") params.set("sort", opts.sort);
+    return request<PaginatedSpecItems>(
+      `/specifications/${id}/items?${params.toString()}`,
+    );
+  },
 
   uploadSpecification: async (
     file: File,

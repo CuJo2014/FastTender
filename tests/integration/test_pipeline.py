@@ -12,7 +12,12 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from fasttender.api.routes.specifications import _compute_counts
+from fasttender.api.routes.specifications import (
+    ItemSort,
+    ItemStatusFilter,
+    _compute_counts,
+    get_specification_items,
+)
 from fasttender.models import (
     DataSourceType,
     Item,
@@ -310,6 +315,99 @@ async def test_counts_split_low_vs_no_candidate(
     assert counts2.items_no_candidate == counts.items_no_candidate + 1
     assert counts2.items_low == counts.items_low
     assert counts2.items_not_found == counts2.items_low + counts2.items_no_candidate
+
+
+# --- Серверные фильтр и сортировка строк (GET /items) ---
+
+
+async def test_items_filter_and_sort(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """status-фильтр и sort на эндпоинте строк работают серверно и
+    корректно считают total по отфильтрованному набору."""
+    await _seed_catalog_and_pricelist(session, tmp_path)
+    spec_file = make_xlsx(
+        tmp_path / "spec.xlsx",
+        rows=[
+            ["Наименование", "Артикул", "Кол-во"],
+            ["Болт М10х40", "BLT-M10-040", 50],
+            ["Гайка М10", "NUT-M10", 100],
+            ["Шайба М10", "WSH-M10", 10],
+        ],
+    )
+    spec = await _create_spec_from_file(session, spec_file)
+    await SpecificationProcessor(session).process(spec.id)
+
+    items = (
+        await session.scalars(
+            select(SpecItem)
+            .where(SpecItem.spec_id == spec.id)
+            .order_by(SpecItem.line_number)
+        )
+    ).all()
+    blt, nut, wsh = items
+    # blt — подтверждён, nut — отклонён, wsh — без решения и без кандидатов.
+    top = await session.scalar(
+        select(MatchCandidate)
+        .where(MatchCandidate.spec_item_id == blt.id, MatchCandidate.rank == 1)
+        .limit(1)
+    )
+    assert top is not None
+    session.add(
+        Verification(
+            spec_item_id=blt.id,
+            chosen_item_id=top.item_id,
+            decision=VerificationDecision.CONFIRMED,
+            decided_by="t",
+        )
+    )
+    session.add(
+        Verification(spec_item_id=nut.id, decision=VerificationDecision.REJECTED)
+    )
+    await session.execute(
+        delete(MatchCandidate).where(MatchCandidate.spec_item_id == wsh.id)
+    )
+    await session.commit()
+
+    async def fetch(
+        status: ItemStatusFilter = ItemStatusFilter.all,
+        sort: ItemSort = ItemSort.line_number,
+    ):  # type: ignore[no-untyped-def]
+        return await get_specification_items(
+            spec.id,
+            session=session,
+            page=1,
+            page_size=50,
+            status_filter=status,
+            sort=sort,
+        )
+
+    all_ = await fetch()
+    assert all_.total == 3
+    assert len(all_.items) == 3
+
+    confirmed = await fetch(status=ItemStatusFilter.confirmed)
+    assert confirmed.total == 1
+    assert confirmed.items[0].line_number == blt.line_number
+
+    rejected = await fetch(status=ItemStatusFilter.rejected)
+    assert rejected.total == 1
+    assert rejected.items[0].line_number == nut.line_number
+
+    pending = await fetch(status=ItemStatusFilter.pending)
+    assert pending.total == 1
+    assert pending.items[0].line_number == wsh.line_number
+
+    nocand = await fetch(status=ItemStatusFilter.no_candidate)
+    assert nocand.total == 1
+    assert nocand.items[0].line_number == wsh.line_number
+
+    # Сортировка по уверенности: строка без кандидата (NULL) всегда последняя.
+    desc = await fetch(sort=ItemSort.confidence_desc)
+    assert [i.line_number for i in desc.items][-1] == wsh.line_number
+    asc = await fetch(sort=ItemSort.confidence_asc)
+    assert [i.line_number for i in asc.items][-1] == wsh.line_number
 
 
 # --- Повторный матчинг неподтверждённых строк ---

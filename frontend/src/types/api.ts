@@ -43,6 +43,8 @@ export interface SpecificationCounts {
   items_no_candidate: number;
   items_verified: number;
   items_pending: number;
+  items_confirmed: number;
+  items_rejected: number;
 }
 
 export interface SpecificationRead {

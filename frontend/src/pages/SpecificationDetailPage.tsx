@@ -9,6 +9,7 @@ import { Link, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type {
+  SpecificationCounts,
   SpecificationRead,
   SpecificationStatus,
   VerificationDecision,
@@ -35,6 +36,11 @@ const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
 function widthOf(widths: Record<string, number>, id: string): number {
   return widths[id] ?? SPEC_COLUMNS.find((c) => c.id === id)?.default ?? 120;
 }
+
+// Сегментный фильтр (ось состояния) и сортировка — значения совпадают с
+// серверными (ItemStatusFilter / ItemSort на бэке).
+type StatusFilter = "all" | "pending" | "confirmed" | "rejected" | "no_candidate";
+type SortBy = "line_number" | "confidence_desc" | "confidence_asc";
 import {
   formatDateTime,
   isInProgress,
@@ -53,6 +59,9 @@ function DetailContent({ specId }: { specId: string }) {
   const [autoConfirmThreshold, setAutoConfirmThreshold] = useState("0.9");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
+  // Сегментный фильтр и сортировка строк (серверные — пагинация серверная).
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [sortBy, setSortBy] = useState<SortBy>("line_number");
 
   // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы и
   // развёрнутая строка товара приклеивались ровно ниже неё (без перекрытия).
@@ -153,8 +162,12 @@ function DetailContent({ specId }: { specId: string }) {
   });
 
   const itemsQuery = useQuery({
-    queryKey: ["specifications", specId, "items", page, pageSize],
-    queryFn: () => api.getSpecificationItems(specId, page, pageSize),
+    queryKey: ["specifications", specId, "items", page, pageSize, statusFilter, sortBy],
+    queryFn: () =>
+      api.getSpecificationItems(specId, page, pageSize, {
+        status: statusFilter,
+        sort: sortBy,
+      }),
     enabled: specQuery.data?.status === "matched"
       || specQuery.data?.status === "verified"
       || specQuery.data?.status === "exported"
@@ -421,6 +434,20 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
 
+          <SpecItemsToolbar
+            counts={spec.counts}
+            status={statusFilter}
+            sort={sortBy}
+            onStatus={(s) => {
+              setStatusFilter(s);
+              setPage(1);
+            }}
+            onSort={(s) => {
+              setSortBy(s);
+              setPage(1);
+            }}
+          />
+
           {itemsQuery.isLoading ? (
             <div className="px-6 py-8 text-center text-slate-500">
               Загрузка строк…
@@ -510,6 +537,77 @@ function DetailContent({ specId }: { specId: string }) {
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+const STATUS_SEGMENTS: {
+  key: StatusFilter;
+  label: string;
+  count: (c: SpecificationCounts) => number;
+}[] = [
+  { key: "all", label: "Все", count: (c) => c.items_total },
+  { key: "pending", label: "Не проверено", count: (c) => c.items_pending },
+  { key: "confirmed", label: "Подтверждено", count: (c) => c.items_confirmed },
+  { key: "rejected", label: "Отклонено", count: (c) => c.items_rejected },
+  { key: "no_candidate", label: "Нет кандидата", count: (c) => c.items_no_candidate },
+];
+
+function SpecItemsToolbar({
+  counts,
+  status,
+  sort,
+  onStatus,
+  onSort,
+}: {
+  counts: SpecificationCounts;
+  status: StatusFilter;
+  sort: SortBy;
+  onStatus: (s: StatusFilter) => void;
+  onSort: (s: SortBy) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-50/60 px-4 py-2">
+      <div className="inline-flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+        {STATUS_SEGMENTS.map((seg) => {
+          const on = seg.key === status;
+          return (
+            <button
+              key={seg.key}
+              type="button"
+              onClick={() => onStatus(seg.key)}
+              className={
+                "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition-colors " +
+                (on
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-900")
+              }
+            >
+              {seg.label}
+              <span
+                className={
+                  "tabular-nums text-xs " +
+                  (on ? "text-slate-500" : "text-slate-400")
+                }
+              >
+                {seg.count(counts)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="ml-auto inline-flex items-center gap-2">
+        <span className="text-xs text-slate-500">Сортировка</span>
+        <select
+          value={sort}
+          onChange={(e) => onSort(e.target.value as SortBy)}
+          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm"
+        >
+          <option value="line_number">по №</option>
+          <option value="confidence_desc">уверенность ↓</option>
+          <option value="confidence_asc">уверенность ↑</option>
+        </select>
+      </div>
     </div>
   );
 }

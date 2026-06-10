@@ -29,6 +29,9 @@ class SpecificationCounts(BaseModel):
     # Прогресс верификации (UX-фидбэк 1 июня 2026)
     items_verified: int = 0  # имеют запись Verification (любое решение)
     items_pending: int = 0  # без записи Verification
+    # Разбивка решений — для чисел на сегментах фильтра таблицы (ревизия UI)
+    items_confirmed: int = 0
+    items_rejected: int = 0
 
 
 class SpecificationRead(BaseModel):

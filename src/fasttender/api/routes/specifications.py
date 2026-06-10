@@ -17,13 +17,14 @@ Phase 1:
 import shutil
 import tempfile
 from contextlib import suppress
+from enum import StrEnum
 from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, nullslast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -40,6 +41,7 @@ from fasttender.models import (
     SpecItem,
     TradingPlatform,
     Verification,
+    VerificationDecision,
 )
 from fasttender.schemas.specification import (
     CandidateRead,
@@ -277,6 +279,54 @@ async def update_specification(
     return await _spec_read(session, spec)
 
 
+class ItemStatusFilter(StrEnum):
+    """Сегменты таблицы строк (ось состояния, Design lock ревизии).
+
+    `pending`/`confirmed`/`rejected` — ось решения менеджера;
+    `no_candidate` — ось качества (у строки нет ни одного кандидата),
+    показывается независимо от решения.
+    """
+
+    all = "all"
+    pending = "pending"
+    confirmed = "confirmed"
+    rejected = "rejected"
+    no_candidate = "no_candidate"
+
+
+class ItemSort(StrEnum):
+    line_number = "line_number"
+    confidence_desc = "confidence_desc"
+    confidence_asc = "confidence_asc"
+
+
+def _item_status_conditions(status_filter: ItemStatusFilter) -> list:  # type: ignore[type-arg]
+    """WHERE-условия для сегментного фильтра (применяются и к count, и к выборке)."""
+    if status_filter is ItemStatusFilter.pending:
+        return [~exists().where(Verification.spec_item_id == SpecItem.id)]
+    if status_filter is ItemStatusFilter.confirmed:
+        return [
+            exists().where(
+                and_(
+                    Verification.spec_item_id == SpecItem.id,
+                    Verification.decision == VerificationDecision.CONFIRMED,
+                )
+            )
+        ]
+    if status_filter is ItemStatusFilter.rejected:
+        return [
+            exists().where(
+                and_(
+                    Verification.spec_item_id == SpecItem.id,
+                    Verification.decision == VerificationDecision.REJECTED,
+                )
+            )
+        ]
+    if status_filter is ItemStatusFilter.no_candidate:
+        return [~exists().where(MatchCandidate.spec_item_id == SpecItem.id)]
+    return []
+
+
 @router.get(
     "/{spec_id}/items",
     response_model=PaginatedSpecItems,
@@ -287,6 +337,8 @@ async def get_specification_items(
     session: AsyncSession = Depends(get_session),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    status_filter: ItemStatusFilter = Query(ItemStatusFilter.all, alias="status"),
+    sort: ItemSort = Query(ItemSort.line_number),
 ) -> PaginatedSpecItems:
     spec = await session.get(Specification, spec_id)
     if spec is None:
@@ -295,17 +347,38 @@ async def get_specification_items(
             detail={"message": "Спецификация не найдена"},
         )
 
+    # Один набор условий — и для total, и для выборки (иначе пагинация врёт).
+    base_where = [SpecItem.spec_id == spec_id, *_item_status_conditions(status_filter)]
+
     total = await session.scalar(
-        select(func.count()).select_from(SpecItem).where(SpecItem.spec_id == spec_id)
+        select(func.count()).select_from(SpecItem).where(*base_where)
     )
 
     offset = (page - 1) * page_size
+    data_q = select(SpecItem).where(*base_where)
+    if sort is ItemSort.line_number:
+        data_q = data_q.order_by(SpecItem.line_number)
+    else:
+        # Сортировка по уверенности топ-1 кандидата; строки без кандидата
+        # (NULL) — всегда в конце, для них есть отдельный сегмент.
+        best_conf = (
+            select(
+                MatchCandidate.spec_item_id.label("sid"),
+                func.max(MatchCandidate.confidence).label("best"),
+            )
+            .where(MatchCandidate.rank == 1)
+            .group_by(MatchCandidate.spec_item_id)
+            .subquery()
+        )
+        best = best_conf.c.best
+        data_q = data_q.outerjoin(best_conf, best_conf.c.sid == SpecItem.id).order_by(
+            nullslast(best.desc() if sort is ItemSort.confidence_desc else best.asc()),
+            SpecItem.line_number,
+        )
+
     spec_items = (
         await session.scalars(
-            select(SpecItem)
-            .where(SpecItem.spec_id == spec_id)
-            .order_by(SpecItem.line_number)
-            .limit(page_size)
+            data_q.limit(page_size)
             .offset(offset)
             .options(
                 selectinload(SpecItem.candidates)
@@ -806,17 +879,18 @@ async def _compute_counts(
     no_candidate = items_total - len(matched_ids)
     not_found = no_candidate + low
 
-    # Счётчик верифицированных (любое решение менеджера: confirmed/rejected/
-    # not_found/new_item_requested). UX-фидбэк 1 июня 2026.
-    items_verified = (
-        await session.scalar(
-            select(func.count())
-            .select_from(Verification)
-            .join(SpecItem, SpecItem.id == Verification.spec_item_id)
-            .where(SpecItem.spec_id == spec_id)
-        )
-        or 0
+    # Разбивка по решению менеджера: verified = сумма всех решений; отдельно
+    # confirmed/rejected — для чисел на сегментах фильтра таблицы.
+    decision_rows = await session.execute(
+        select(Verification.decision, func.count())
+        .join(SpecItem, SpecItem.id == Verification.spec_item_id)
+        .where(SpecItem.spec_id == spec_id)
+        .group_by(Verification.decision)
     )
+    by_decision = {d: int(c) for d, c in decision_rows}
+    items_verified = sum(by_decision.values())
+    confirmed = by_decision.get(VerificationDecision.CONFIRMED, 0)
+    rejected = by_decision.get(VerificationDecision.REJECTED, 0)
 
     return SpecificationCounts(
         items_total=int(items_total),
@@ -825,8 +899,10 @@ async def _compute_counts(
         items_not_found=not_found,
         items_low=low,
         items_no_candidate=no_candidate,
-        items_verified=int(items_verified),
-        items_pending=int(items_total) - int(items_verified),
+        items_verified=items_verified,
+        items_pending=int(items_total) - items_verified,
+        items_confirmed=confirmed,
+        items_rejected=rejected,
     )
 
 
