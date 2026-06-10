@@ -8,10 +8,11 @@ async, и его поведение проще верифицировать бе
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from fasttender.api.routes.specifications import _compute_counts
 from fasttender.models import (
     DataSourceType,
     Item,
@@ -255,6 +256,60 @@ async def test_reprocess_replaces_spec_items(
     spec_items = (await session.scalars(select(SpecItem).where(SpecItem.spec_id == spec.id))).all()
     # Та же одна позиция, не дублирована
     assert len(spec_items) == 1
+
+
+# --- Счётчики: разнесение «слабый кандидат» vs «нет кандидата» ---
+
+
+async def test_counts_split_low_vs_no_candidate(
+    session: AsyncSession,
+    tmp_path: Path,
+) -> None:
+    """_compute_counts разносит items_low (кандидат есть, conf<min) и
+    items_no_candidate (кандидатов нет); not_found = их сумма."""
+    await _seed_catalog_and_pricelist(session, tmp_path)
+    spec_file = make_xlsx(
+        tmp_path / "spec.xlsx",
+        rows=[
+            ["Наименование", "Артикул", "Кол-во"],
+            ["Болт М10х40", "BLT-M10-040", 50],
+            ["Гайка М10", "NUT-M10", 100],
+            ["Шайба М10", "WSH-M10", 10],
+        ],
+    )
+    spec = await _create_spec_from_file(session, spec_file)
+    await SpecificationProcessor(session).process(spec.id)
+
+    counts = await _compute_counts(session, spec.id, 0.9, 0.5)
+    assert counts.items_total == 3
+    # Инварианты разнесения держатся всегда.
+    assert counts.items_not_found == counts.items_low + counts.items_no_candidate
+    assert (
+        counts.items_matched_high
+        + counts.items_matched_medium
+        + counts.items_low
+        + counts.items_no_candidate
+        == counts.items_total
+    )
+
+    # Детерминированно делаем одну строку «без кандидата» — удаляем её
+    # кандидатов и проверяем, что прирост ушёл именно в no_candidate, не в low.
+    first = await session.scalar(
+        select(SpecItem)
+        .where(SpecItem.spec_id == spec.id)
+        .order_by(SpecItem.line_number)
+        .limit(1)
+    )
+    assert first is not None
+    await session.execute(
+        delete(MatchCandidate).where(MatchCandidate.spec_item_id == first.id)
+    )
+    await session.commit()
+
+    counts2 = await _compute_counts(session, spec.id, 0.9, 0.5)
+    assert counts2.items_no_candidate == counts.items_no_candidate + 1
+    assert counts2.items_low == counts.items_low
+    assert counts2.items_not_found == counts2.items_low + counts2.items_no_candidate
 
 
 # --- Повторный матчинг неподтверждённых строк ---

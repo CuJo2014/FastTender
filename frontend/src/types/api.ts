@@ -39,6 +39,8 @@ export interface SpecificationCounts {
   items_matched_high: number;
   items_matched_medium: number;
   items_not_found: number;
+  items_low: number;
+  items_no_candidate: number;
   items_verified: number;
   items_pending: number;
 }

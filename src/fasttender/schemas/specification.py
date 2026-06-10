@@ -21,7 +21,11 @@ class SpecificationCounts(BaseModel):
     items_total: int = 0
     items_matched_high: int = 0  # confidence >= auto_confirm threshold
     items_matched_medium: int = 0  # min <= confidence < auto_confirm
-    items_not_found: int = 0  # confidence < min или нет кандидатов
+    items_not_found: int = 0  # confidence < min или нет кандидатов (= low + no_candidate)
+    # Качество сопоставления разнесено (ревизия UI, ось «Б»): слабый кандидат
+    # vs полное отсутствие кандидата — это разные ситуации для оператора.
+    items_low: int = 0  # есть кандидат, но confidence < min
+    items_no_candidate: int = 0  # кандидатов нет совсем
     # Прогресс верификации (UX-фидбэк 1 июня 2026)
     items_verified: int = 0  # имеют запись Verification (любое решение)
     items_pending: int = 0  # без записи Verification

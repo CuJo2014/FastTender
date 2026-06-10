@@ -309,7 +309,7 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
 
-          <div className="grid flex-1 grid-cols-5 gap-4 text-center text-sm">
+          <div className="grid flex-1 grid-cols-6 gap-4 text-center text-sm">
             <Counter label="Всего" value={spec.counts.items_total} />
             <Counter
               label="≥ 90%"
@@ -322,9 +322,14 @@ function DetailContent({ specId }: { specId: string }) {
               valueClass="text-conf-medium"
             />
             <Counter
-              label="Не найдено"
-              value={spec.counts.items_not_found}
+              label="< 50%"
+              value={spec.counts.items_low}
               valueClass="text-conf-low"
+            />
+            <Counter
+              label="Нет кандидата"
+              value={spec.counts.items_no_candidate}
+              valueClass="text-slate-500"
             />
             <Counter
               label="Закрыто"

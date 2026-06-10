@@ -798,9 +798,13 @@ async def _compute_counts(
     high = sum(1 for _, c in rows if c is not None and float(c) >= high_threshold)
     medium = sum(1 for _, c in rows if c is not None and min_threshold <= float(c) < high_threshold)
     matched_ids = {r[0] for r in rows}
-    # «not_found» = всё, что не попало в matched_ids или попало с confidence < min
+    # Разносим «нет кандидата» и «слабый кандидат» (ось качества из ревизии UI):
+    #   low          — кандидат есть (rank=1), но confidence < min
+    #   no_candidate — у строки нет ни одного кандидата
+    #   not_found    — сумма обоих (обратная совместимость со списком спек)
     low = sum(1 for _, c in rows if c is not None and float(c) < min_threshold)
-    not_found = items_total - len(matched_ids) + low
+    no_candidate = items_total - len(matched_ids)
+    not_found = no_candidate + low
 
     # Счётчик верифицированных (любое решение менеджера: confirmed/rejected/
     # not_found/new_item_requested). UX-фидбэк 1 июня 2026.
@@ -819,6 +823,8 @@ async def _compute_counts(
         items_matched_high=high,
         items_matched_medium=medium,
         items_not_found=not_found,
+        items_low=low,
+        items_no_candidate=no_candidate,
         items_verified=int(items_verified),
         items_pending=int(items_total) - int(items_verified),
     )
