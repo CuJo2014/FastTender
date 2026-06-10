@@ -22,13 +22,17 @@ import { useColumnWidths } from "../hooks/useColumnWidths";
 
 // Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
 const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
-  { id: "num", label: "№", default: 48 },
+  { id: "num", label: "№", default: 44 },
   { id: "source", label: "Исходная позиция", default: 360 },
-  { id: "qty", label: "Кол-во", default: 112 },
+  { id: "qty", label: "Кол-во", default: 92 },
   { id: "chosen", label: "Выбранная позиция", default: 360 },
-  { id: "decision", label: "Решение", default: 160 },
-  { id: "actions", label: "", default: 128 },
+  { id: "decision", label: "Решение", default: 128 },
+  { id: "actions", label: "", default: 108 },
 ];
+
+function widthOf(widths: Record<string, number>, id: string): number {
+  return widths[id] ?? SPEC_COLUMNS.find((c) => c.id === id)?.default ?? 120;
+}
 import {
   formatDateTime,
   isInProgress,
@@ -71,15 +75,43 @@ function DetailContent({ specId }: { specId: string }) {
   // Ширины колонок таблицы строк (drag-resize, сохраняются глобально).
   const { widths, setWidth, resetWidth, resetAll } = useColumnWidths();
   const colW = useCallback(
-    (id: string) =>
-      widths[id] ?? SPEC_COLUMNS.find((c) => c.id === id)?.default ?? 120,
+    (id: string) => widthOf(widths, id),
     [widths],
   );
+
+  // Доступная ширина контейнера таблицы — чтобы сумма колонок её не превышала
+  // (иначе правые колонки «уезжают» за границы блока).
+  const [availWidth, setAvailWidth] = useState(0);
+  const tableRoRef = useRef<ResizeObserver | null>(null);
+  const setTableWrapEl = useCallback((node: HTMLDivElement | null) => {
+    tableRoRef.current?.disconnect();
+    tableRoRef.current = null;
+    if (!node) return;
+    const measure = () => setAvailWidth(node.clientWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    tableRoRef.current = ro;
+  }, []);
+
+  // Свежие значения для обработчика drag без пересоздания listener'ов.
+  const dragStateRef = useRef({ widths, availWidth });
+  dragStateRef.current = { widths, availWidth };
+
   const dragRef = useRef<{ id: string; startX: number; startW: number } | null>(null);
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current;
-      if (d) setWidth(d.id, d.startW + (e.clientX - d.startX));
+      if (!d) return;
+      const proposed = d.startW + (e.clientX - d.startX);
+      const { widths: w, availWidth: avail } = dragStateRef.current;
+      const others = SPEC_COLUMNS.reduce(
+        (s, c) => s + (c.id === d.id ? 0 : widthOf(w, c.id)),
+        0,
+      );
+      // Клампим так, чтобы суммарная ширина не превысила контейнер.
+      const max = avail > 0 ? Math.max(60, avail - others) : proposed;
+      setWidth(d.id, Math.min(proposed, max));
     };
     const onUp = () => {
       dragRef.current = null;
@@ -100,6 +132,14 @@ function DetailContent({ specId }: { specId: string }) {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   };
+
+  // Если сохранённые ширины суммарно шире контейнера (например, из старого
+  // localStorage) — масштабируем к ширине блока, чтобы колонки не уезжали.
+  const rawTotalW = SPEC_COLUMNS.reduce((s, c) => s + colW(c.id), 0);
+  const fitScale =
+    availWidth > 0 && rawTotalW > availWidth ? availWidth / rawTotalW : 1;
+  const dispW = (id: string) => Math.floor(colW(id) * fitScale);
+  const tableWidth = availWidth > 0 ? Math.min(rawTotalW, availWidth) : rawTotalW;
 
   const specQuery = useQuery({
     queryKey: ["specifications", specId],
@@ -373,7 +413,7 @@ function DetailContent({ specId }: { specId: string }) {
               Загрузка строк…
             </div>
           ) : (
-            <div>
+            <div ref={setTableWrapEl}>
               <div className="flex justify-end px-4 py-1">
                 <button
                   type="button"
@@ -386,14 +426,11 @@ function DetailContent({ specId }: { specId: string }) {
               </div>
               <table
                 className="text-sm"
-                style={{
-                  tableLayout: "fixed",
-                  width: SPEC_COLUMNS.reduce((s, c) => s + colW(c.id), 0),
-                }}
+                style={{ tableLayout: "fixed", width: tableWidth }}
               >
                 <colgroup>
                   {SPEC_COLUMNS.map((c) => (
-                    <col key={c.id} style={{ width: colW(c.id) }} />
+                    <col key={c.id} style={{ width: dispW(c.id) }} />
                   ))}
                 </colgroup>
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
