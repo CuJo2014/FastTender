@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastTender — Ревизия интерфейса страницы спецификации</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f1f5f9; --paper:#ffffff; --border:#e2e8f0; --border-strong:#cbd5e1;
+    --ink:#0f172a; --ink-2:#334155; --muted:#64748b; --faint:#94a3b8;
+    --navy:#1e293b; --blue:#2563eb;
+    --crit:#dc2626; --crit-bg:#fee2e2; --imp:#d97706; --imp-bg:#fef3c7; --enh:#2563eb; --enh-bg:#dbeafe;
+    --done:#16a34a; --done-bg:#dcfce7;
+    --radius:12px; --shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink); font-family:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.6}
+  .page{max-width:980px; margin:0 auto; padding:48px 28px 80px}
+
+  /* шапка документа */
+  .doc-head{border-bottom:2px solid var(--ink); padding-bottom:22px; margin-bottom:8px}
+  .eyebrow{font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--blue); margin-bottom:10px}
+  h1{font-size:32px; line-height:1.18; letter-spacing:-.02em; margin:0 0 14px; font-weight:600}
+  .meta{display:flex; flex-wrap:wrap; gap:6px 28px; font-size:13px; color:var(--muted)}
+  .meta b{color:var(--ink-2); font-weight:600}
+  .meta a{color:var(--blue); text-decoration:none}
+  .meta a:hover{text-decoration:underline}
+
+  section{margin-top:48px}
+  h2{font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 18px; padding-bottom:10px; border-bottom:1px solid var(--border)}
+  h3{font-size:19px; letter-spacing:-.01em; margin:0 0 8px; font-weight:600}
+  p{margin:0 0 14px; color:var(--ink-2)}
+  p.lead{font-size:16px; color:var(--ink-2)}
+  code{font-family:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace; font-size:.88em; background:#e8edf3; color:#0f172a; padding:1.5px 6px; border-radius:5px}
+  strong{color:var(--ink); font-weight:600}
+
+  /* таблица рекомендаций */
+  .rec{width:100%; border-collapse:collapse; font-size:13.5px; background:var(--paper); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow)}
+  .rec thead th{background:#f8fafc; text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:11px 14px; border-bottom:1px solid var(--border)}
+  .rec tbody td{padding:13px 14px; border-bottom:1px solid #eef1f5; vertical-align:top; color:var(--ink-2)}
+  .rec tbody tr:last-child td{border-bottom:none}
+  .rec td.problem{color:var(--ink); font-weight:500}
+  .pri{display:inline-flex; align-items:center; font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .pri.crit{background:var(--crit-bg); color:var(--crit)}
+  .pri.imp{background:var(--imp-bg); color:var(--imp)}
+  .pri.enh{background:var(--enh-bg); color:var(--enh)}
+  .tag{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:500; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .tag.done{background:var(--done-bg); color:#166534}
+  .tag.prop{background:#f1f5f9; color:#475569}
+  .tag .dot{width:5px;height:5px;border-radius:999px;background:currentColor}
+
+  /* демонстрация мокапа */
+  .demo{border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow); background:#fff; margin-top:8px}
+  .demo-bar{display:flex; align-items:center; gap:8px; padding:9px 14px; background:#0f172a; color:#cbd5e1; font-size:12px; font-weight:500; letter-spacing:.02em}
+  .demo-bar .dots{display:flex; gap:6px; margin-right:6px}
+  .demo-bar .dots i{width:10px;height:10px;border-radius:999px;background:#475569; display:block}
+  .demo-bar .live{margin-left:auto; display:inline-flex; align-items:center; gap:6px; font-size:11px; color:#86efac}
+  .demo-bar .live::before{content:""; width:6px;height:6px;border-radius:999px;background:#22c55e}
+  iframe{width:100%; border:0; display:block; background:#f8fafc}
+
+  ul.tight{margin:0 0 14px; padding-left:0; list-style:none}
+  ul.tight li{position:relative; padding-left:22px; margin-bottom:9px; color:var(--ink-2)}
+  ul.tight li::before{content:""; position:absolute; left:4px; top:9px; width:6px; height:6px; border-radius:2px; background:var(--blue)}
+  ul.tight li b{color:var(--ink)}
+
+  .callout{background:var(--paper); border:1px solid var(--border); border-left:3px solid var(--blue); border-radius:8px; padding:16px 18px; margin-top:8px}
+  .callout h4{margin:0 0 10px; font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600}
+
+  .foot{margin-top:56px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--faint)}
+  @media (max-width:640px){ h1{font-size:25px} .rec{font-size:12.5px} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-head">
+    <div class="eyebrow">FastTender · Frontend · Phase 1</div>
+    <h1>Ревизия интерфейса страницы спецификации</h1>
+    <div class="meta">
+      <span><b>Страница:</b> <code>/specifications/:id</code></span>
+      <span><b>Стиль:</b> Clean SaaS (navy/blue, Geist)</span>
+      <span><b>Статус:</b> к реализации</span>
+    </div>
+  </header>
+
+  <section>
+    <p class="lead">Документ описывает изменения интерфейса страницы спецификации: разбор текущих проблем, приоритеты и два готовых интерактивных мокапа (сводка-метрик и таблица результатов), встроенных ниже. Мокапы рабочие — действия, фильтры и пересчёты можно проверить прямо в документе.</p>
+  </section>
+
+  <section>
+    <h2>Сводка рекомендаций</h2>
+    <table class="rec">
+      <thead>
+        <tr><th style="width:96px">Приоритет</th><th>Проблема</th><th>Решение</th><th style="width:150px">Статус</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="pri crit">Критично</span></td>
+          <td class="problem">Цвет «Уверенности» противоречит «Решению»: красный score рядом с зелёным «Подтверждено» (строки 18, 22, 26)</td>
+          <td>На решённых строках бейдж score приглушается до нейтрального; цвет уверенности работает только пока решение открыто</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri crit">Критично</span></td>
+          <td class="problem">Метрики сводки смешивают три оси; бакет «Не найдено» (41) включает и строки со слабым кандидатом, и строки без кандидата — суммы не сходятся по смыслу</td>
+          <td>Разнести на «Прогресс верификации» и «Качество сопоставления»; разделить <code>&lt; 50%</code> (кандидат есть) и <code>Нет кандидата</code></td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе сводки</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri crit">Критично</span></td>
+          <td class="problem">«Кол-во» в сыром формате <code>18.0000</code> с хвостовыми нулями</td>
+          <td>Обрезать незначащие нули (<code>18</code>, <code>147.49</code>), сохранить <code>tabular-nums</code></td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri imp">Важно</span></td>
+          <td class="problem">Нет фильтра и сортировки — непроверенные строки приходится искать глазами среди подтверждённых</td>
+          <td>Сегменты по статусу (Все / Не проверено / Подтверждено / Нет кандидата) + сортировка по уверенности</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri imp">Важно</span></td>
+          <td class="problem">Основное действие спрятано в низкоконтрастную ghost-кнопку «Кандидаты»; подтверждение требует открытия модалки</td>
+          <td>Инлайн-действия ✓ / ✗ прямо в колонке «Решение»; «Кандидаты» — как выбор кандидата</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri imp">Важно</span></td>
+          <td class="problem">Нет массовых операций при 51 строке</td>
+          <td>Чекбоксы строк + «выбрать все видимые» + bulk-бар (подтвердить / отклонить / снять)</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri imp">Важно</span></td>
+          <td class="problem">«Авто-подтвердить» не даёт обратной связи: при пороге 0.9 (а ≥90% = 0) кнопка выглядит рабочей, но ничего не делает</td>
+          <td>Счётчик затрагиваемых строк <code>Авто-подтвердить (N)</code> + дизейбл при N = 0</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri enh">Улучшение</span></td>
+          <td class="problem">Хрупкий sticky: шапка таблицы прибита инлайном <code>top:283px</code>, завязана на высоту сводки</td>
+          <td>Sticky к контейнеру прокрутки (<code>top:0</code>) либо динамический offset от высоты карточки</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе таблицы</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri enh">Улучшение</span></td>
+          <td class="problem">Деструктивное «Отказаться от спецификации» стоит без отбивки, легко промахнуться</td>
+          <td>Убрать в overflow-меню «⋯» с подтверждением</td>
+          <td><span class="tag done"><span class="dot"></span>В мокапе сводки</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri enh">Улучшение</span></td>
+          <td class="problem">Разный словарь статусов: «На верификации» / «Не верифицировано» / «Подтверждено»</td>
+          <td>Единый словарь строки: <strong>Не проверено · Подтверждено · Отклонено</strong></td>
+          <td><span class="tag done"><span class="dot"></span>В мокапах</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri enh">Улучшение</span></td>
+          <td class="problem">Сводка занимает ~270px по вертикали, съедает область таблицы на ноутбуке</td>
+          <td>Компактная двухрядная компоновка; опционально — сворачивание при скролле</td>
+          <td><span class="tag prop"><span class="dot"></span>Частично</span></td>
+        </tr>
+        <tr>
+          <td><span class="pri enh">Улучшение</span></td>
+          <td class="problem">Пагинация 50 при 51 строке — одна строка уезжает на отдельную страницу</td>
+          <td>Дефолтный размер страницы 100</td>
+          <td><span class="tag prop"><span class="dot"></span>Предложение</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Блок 1 — Сводка-метрик</h2>
+    <h3>Две оси вместо одной строки чисел</h3>
+    <p>Текущая сводка сводит пять разнородных чисел в один ряд, где уверенность модели, статус матчинга и статус workflow перемешаны. Ключевое следствие — <code>≥90% = 0</code> при шести подтверждённых строках выглядит как ошибка. Новая версия разделяет два независимых измерения:</p>
+    <ul class="tight">
+      <li><b>Прогресс верификации</b> — сколько строк закрыто (workflow). Прогресс-бар и счётчики «закрыто / осталось».</li>
+      <li><b>Качество сопоставления</b> — распределение по уверенности как пропорциональная полоса. Прежний «Не найдено» разделён на <code>&lt; 50%</code> (слабый кандидат есть) и <code>Нет кандидата</code>, поэтому суммы сходятся: <code>0 + 10 + 8 + 33 = 51</code>.</li>
+      <li><b>Легенда = фильтр</b> — клик по категории затемняет остальные сегменты и ведёт к фильтрации таблицы.</li>
+    </ul>
+    <div class="demo">
+      <div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span> Мокап: сводка-метрик <span class="live">интерактивно</span></div>
+      <iframe src="about:blank" height="400" title="Мокап сводки-метрик" srcdoc="<!DOCTYPE html>
+<html lang=&quot;ru&quot;>
+<head>
+<meta charset=&quot;UTF-8&quot;>
+<meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;>
+<title>FastTender — сводка спецификации (мокап)</title>
+<link rel=&quot;preconnect&quot; href=&quot;https://fonts.googleapis.com&quot;>
+<link rel=&quot;preconnect&quot; href=&quot;https://fonts.gstatic.com&quot; crossorigin>
+<link href=&quot;https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap&quot; rel=&quot;stylesheet&quot;>
+<style>
+  :root{
+    --bg:#f8fafc;
+    --card:#ffffff;
+    --border:#e2e8f0;
+    --border-strong:#cbd5e1;
+    --ink:#0f172a;
+    --ink-2:#334155;
+    --muted:#64748b;
+    --faint:#94a3b8;
+    --navy:#1e293b;
+    --navy-hover:#0f172a;
+    --blue:#2563eb;
+
+    /* семантика уверенности */
+    --high:#16a34a;   --high-bg:#dcfce7;   --high-ink:#166534;
+    --mid:#d97706;    --mid-bg:#fef3c7;    --mid-ink:#92400e;
+    --low:#dc2626;    --low-bg:#fee2e2;    --low-ink:#991b1b;
+    --none:#94a3b8;   --none-bg:#f1f5f9;   --none-ink:#475569;
+
+    --radius:10px;
+    --shadow:0 1px 2px rgba(15,23,42,.04), 0 1px 3px rgba(15,23,42,.06);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:&quot;Geist&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding:32px 24px;
+  }
+  .wrap{max-width:1180px; margin:0 auto}
+
+  .card{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:var(--radius); box-shadow:var(--shadow);
+  }
+
+  /* ---------- РЯД 1: идентификация ---------- */
+  .head{
+    display:flex; align-items:center; gap:20px;
+    padding:14px 20px; border-bottom:1px solid var(--border);
+    flex-wrap:wrap;
+  }
+  .file{min-width:0}
+  .file h2{
+    margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .file .meta{margin-top:2px; font-size:12px; color:var(--muted)}
+
+  .field{display:flex; flex-direction:column; gap:5px}
+  .field > span.lbl{
+    font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--muted); font-weight:500;
+  }
+  .field.chk > label{
+    display:flex; align-items:center; gap:6px;
+    font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--muted); font-weight:500; cursor:pointer;
+  }
+  select{
+    font:inherit; font-size:13px; color:var(--ink);
+    border:1px solid var(--border-strong); border-radius:6px;
+    padding:6px 28px 6px 10px; background:#fff;
+    appearance:none;
+    background-image:url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'><path d='M6 9l6 6 6-6'/></svg>&quot;);
+    background-repeat:no-repeat; background-position:right 8px center;
+    min-width:180px; cursor:pointer;
+  }
+  select:hover{border-color:var(--faint)}
+  select:focus-visible{outline:2px solid var(--blue); outline-offset:1px; border-color:var(--blue)}
+  input[type=checkbox]{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}
+
+  .badge{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12px; font-weight:500; padding:3px 10px; border-radius:999px;
+    background:var(--mid-bg); color:var(--mid-ink);
+  }
+  .badge .dot{width:6px;height:6px;border-radius:999px;background:var(--mid)}
+
+  .head .spacer{margin-left:auto}
+  .head-actions{display:flex; align-items:center; gap:8px}
+
+  .btn{
+    font:inherit; font-size:13px; font-weight:500;
+    border-radius:7px; padding:7px 13px; cursor:pointer;
+    border:1px solid transparent; transition:background .12s, border-color .12s;
+    display:inline-flex; align-items:center; gap:7px;
+  }
+  .btn-ghost{background:transparent; color:var(--ink-2)}
+  .btn-ghost:hover{background:#f1f5f9}
+  .btn-icon{
+    width:34px; height:34px; padding:0; justify-content:center;
+    background:transparent; color:var(--muted); border-radius:7px;
+  }
+  .btn-icon:hover{background:#f1f5f9; color:var(--ink)}
+  .btn:focus-visible{outline:2px solid var(--blue); outline-offset:1px}
+
+  /* overflow-меню */
+  .menu{position:relative}
+  .menu-pop{
+    position:absolute; right:0; top:calc(100% + 6px); z-index:20;
+    background:#fff; border:1px solid var(--border); border-radius:8px;
+    box-shadow:0 8px 24px rgba(15,23,42,.12); padding:5px;
+    min-width:230px; display:none;
+  }
+  .menu.open .menu-pop{display:block}
+  .menu-item{
+    display:flex; align-items:center; gap:9px; width:100%;
+    font:inherit; font-size:13px; text-align:left;
+    padding:8px 10px; border-radius:6px; border:none; background:none; cursor:pointer;
+    color:var(--low);
+  }
+  .menu-item:hover{background:var(--low-bg)}
+
+  /* ---------- РЯД 2: метрики ---------- */
+  .metrics{
+    display:grid; grid-template-columns:minmax(220px,260px) 1fr;
+    gap:28px; padding:18px 20px 20px;
+  }
+  @media (max-width:760px){ .metrics{grid-template-columns:1fr; gap:22px} }
+
+  .m-head{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    margin-bottom:11px;
+  }
+  .m-title{
+    font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--muted); font-weight:600;
+  }
+
+  /* прогресс верификации */
+  .prog-num{display:flex; align-items:baseline; gap:7px}
+  .prog-num b{font-size:28px; font-weight:600; letter-spacing:-.02em; font-variant-numeric:tabular-nums}
+  .prog-num .of{font-size:14px; color:var(--faint); font-variant-numeric:tabular-nums}
+  .prog-num .pct{
+    margin-left:auto; font-size:12px; font-weight:500; color:var(--high-ink);
+    background:var(--high-bg); padding:2px 8px; border-radius:999px;
+  }
+  .prog-bar{height:8px; border-radius:999px; background:#eef2f6; overflow:hidden; margin-top:12px}
+  .prog-bar > i{display:block; height:100%; background:var(--high); border-radius:999px; transition:width .5s ease}
+  .prog-sub{
+    margin-top:10px; font-size:12px; color:var(--muted);
+    display:flex; gap:14px;
+  }
+  .prog-sub b{color:var(--ink-2); font-weight:600; font-variant-numeric:tabular-nums}
+
+  /* распределение уверенности */
+  .dist-bar{
+    display:flex; height:14px; border-radius:6px; overflow:hidden;
+    background:#eef2f6; gap:2px; margin-bottom:14px;
+  }
+  .dist-bar > span{transition:flex .4s ease, opacity .15s; min-width:0}
+  .seg-high{background:var(--high)}
+  .seg-mid{background:var(--mid)}
+  .seg-low{background:var(--low)}
+  .seg-none{background:var(--none)}
+  .dist-bar.dim > span{opacity:.28}
+  .dist-bar.dim > span.on{opacity:1}
+
+  .legend{display:flex; flex-wrap:wrap; gap:8px}
+  .chip{
+    display:inline-flex; align-items:center; gap:9px;
+    border:1px solid var(--border); border-radius:8px;
+    padding:7px 11px 7px 10px; cursor:pointer; background:#fff;
+    transition:border-color .12s, background .12s; user-select:none;
+  }
+  .chip:hover{border-color:var(--border-strong); background:#fafbfc}
+  .chip.active{border-color:var(--ink); background:#f8fafc}
+  .chip:focus-visible{outline:2px solid var(--blue); outline-offset:1px}
+  .chip .sw{width:10px;height:10px;border-radius:3px;flex:none}
+  .chip .ct{font-size:16px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+  .chip .cl{font-size:12px; color:var(--muted); line-height:1.15}
+  .chip .cl small{display:block; font-size:10.5px; color:var(--faint)}
+  .sw-high{background:var(--high)} .sw-mid{background:var(--mid)}
+  .sw-low{background:var(--low)} .sw-none{background:var(--none)}
+
+  .hint{
+    margin-top:13px; font-size:11.5px; color:var(--faint);
+    display:flex; align-items:center; gap:6px;
+  }
+
+  .note{max-width:1180px; margin:18px auto 0; font-size:12px; color:var(--faint); line-height:1.6}
+  .note code{background:#eef2f6; padding:1px 5px; border-radius:4px; color:var(--ink-2)}
+
+  @media (prefers-reduced-motion:reduce){ *{transition:none !important} }
+</style>
+</head>
+<body>
+<div class=&quot;wrap&quot;>
+  <div class=&quot;card&quot;>
+
+    <!-- РЯД 1 — идентификация и контекст -->
+    <div class=&quot;head&quot;>
+      <div class=&quot;file&quot;>
+        <h2>03_Стенмикс.xlsx</h2>
+        <div class=&quot;meta&quot;>Загружен 05.06.2026, 12:57</div>
+      </div>
+
+      <div class=&quot;field&quot;>
+        <span class=&quot;lbl&quot;>Статус</span>
+        <span class=&quot;badge&quot;><span class=&quot;dot&quot;></span>На верификации</span>
+      </div>
+
+      <div class=&quot;field&quot;>
+        <span class=&quot;lbl&quot;>Клиент</span>
+        <select aria-label=&quot;Клиент&quot;>
+          <option>Стенмикс ОКО</option>
+          <option>Аптрейд</option>
+          <option>ТПК</option>
+          <option>— не выбран —</option>
+        </select>
+      </div>
+
+      <div class=&quot;field chk&quot;>
+        <label><input type=&quot;checkbox&quot; checked>Спецификация ТП</label>
+        <select aria-label=&quot;Площадка&quot;>
+          <option>Стенмикс (Газпром)</option>
+          <option>B2B Центр</option>
+          <option>ТЭК Торг</option>
+          <option>— площадка не выбрана —</option>
+        </select>
+      </div>
+
+      <div class=&quot;spacer&quot;></div>
+      <div class=&quot;head-actions&quot;>
+        <button class=&quot;btn btn-ghost&quot;>← К списку</button>
+        <div class=&quot;menu&quot; id=&quot;menu&quot;>
+          <button class=&quot;btn btn-icon&quot; id=&quot;menuBtn&quot; aria-label=&quot;Ещё&quot; aria-haspopup=&quot;true&quot; aria-expanded=&quot;false&quot;>
+            <svg width=&quot;18&quot; height=&quot;18&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;currentColor&quot;><circle cx=&quot;5&quot; cy=&quot;12&quot; r=&quot;1.8&quot;/><circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;1.8&quot;/><circle cx=&quot;19&quot; cy=&quot;12&quot; r=&quot;1.8&quot;/></svg>
+          </button>
+          <div class=&quot;menu-pop&quot; role=&quot;menu&quot;>
+            <button class=&quot;menu-item&quot; role=&quot;menuitem&quot;>
+              <svg width=&quot;15&quot; height=&quot;15&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><path d=&quot;M3 6h18M8 6V4h8v2m-9 0v14a1 1 0 001 1h8a1 1 0 001-1V6&quot;/></svg>
+              Отказаться от спецификации
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- РЯД 2 — две оси метрик -->
+    <div class=&quot;metrics&quot;>
+
+      <!-- ось А: прогресс верификации -->
+      <div class=&quot;m-prog&quot;>
+        <div class=&quot;m-head&quot;><span class=&quot;m-title&quot;>Прогресс верификации</span></div>
+        <div class=&quot;prog-num&quot;>
+          <b>6</b><span class=&quot;of&quot;>/ 51</span>
+          <span class=&quot;pct&quot;>12%</span>
+        </div>
+        <div class=&quot;prog-bar&quot;><i style=&quot;width:12%&quot;></i></div>
+        <div class=&quot;prog-sub&quot;>
+          <span>Закрыто <b>6</b></span>
+          <span>Осталось <b>45</b></span>
+        </div>
+      </div>
+
+      <!-- ось Б: качество сопоставления -->
+      <div class=&quot;m-dist&quot;>
+        <div class=&quot;m-head&quot;>
+          <span class=&quot;m-title&quot;>Качество сопоставления</span>
+          <span style=&quot;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums&quot;>51 позиция</span>
+        </div>
+
+        <div class=&quot;dist-bar&quot; id=&quot;distBar&quot;>
+          <span class=&quot;seg-high&quot; data-k=&quot;high&quot; style=&quot;flex:0.001&quot;></span>
+          <span class=&quot;seg-mid&quot;  data-k=&quot;mid&quot;  style=&quot;flex:10&quot;></span>
+          <span class=&quot;seg-low&quot;  data-k=&quot;low&quot;  style=&quot;flex:8&quot;></span>
+          <span class=&quot;seg-none&quot; data-k=&quot;none&quot; style=&quot;flex:33&quot;></span>
+        </div>
+
+        <div class=&quot;legend&quot; id=&quot;legend&quot;>
+          <button class=&quot;chip&quot; data-k=&quot;high&quot;>
+            <span class=&quot;sw sw-high&quot;></span>
+            <span class=&quot;ct&quot;>0</span>
+            <span class=&quot;cl&quot;>≥ 90%<small>высокая</small></span>
+          </button>
+          <button class=&quot;chip&quot; data-k=&quot;mid&quot;>
+            <span class=&quot;sw sw-mid&quot;></span>
+            <span class=&quot;ct&quot;>10</span>
+            <span class=&quot;cl&quot;>50–90%<small>средняя</small></span>
+          </button>
+          <button class=&quot;chip&quot; data-k=&quot;low&quot;>
+            <span class=&quot;sw sw-low&quot;></span>
+            <span class=&quot;ct&quot;>8</span>
+            <span class=&quot;cl&quot;>&amp;lt; 50%<small>слабый кандидат</small></span>
+          </button>
+          <button class=&quot;chip&quot; data-k=&quot;none&quot;>
+            <span class=&quot;sw sw-none&quot;></span>
+            <span class=&quot;ct&quot;>33</span>
+            <span class=&quot;cl&quot;>Нет кандидата<small>не сопоставлено</small></span>
+          </button>
+        </div>
+
+        <div class=&quot;hint&quot;>
+          <svg width=&quot;13&quot; height=&quot;13&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;9&quot;/><path d=&quot;M12 8h.01M11 12h1v4h1&quot;/></svg>
+          Нажмите на категорию, чтобы отфильтровать строки таблицы
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class=&quot;note&quot;>
+    Мокап сводки. Главное изменение против текущей версии: метрики разнесены на две оси — <strong>прогресс верификации</strong> (workflow) и <strong>качество сопоставления</strong> (уверенность). Прежний бакет «Не найдено» разделён на <code>&amp;lt; 50%</code> (кандидат есть, но слабый) и <code>Нет кандидата</code>, поэтому суммы сходятся: <code>0 + 10 + 8 + 33 = 51</code>. Полоса распределения + легенда заменяют пять разнородных чисел и работают как фильтр.
+  </div>
+</div>
+
+<script>
+  // overflow-меню
+  const menu = document.getElementById('menu');
+  const menuBtn = document.getElementById('menuBtn');
+  menuBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    const open = menu.classList.toggle('open');
+    menuBtn.setAttribute('aria-expanded', open);
+  });
+  document.addEventListener('click', ()=>{ menu.classList.remove('open'); menuBtn.setAttribute('aria-expanded','false'); });
+
+  // фильтр по категории уверенности
+  const legend = document.getElementById('legend');
+  const bar = document.getElementById('distBar');
+  let active = null;
+  legend.querySelectorAll('.chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      const k = chip.dataset.k;
+      const same = active === k;
+      legend.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+      bar.classList.remove('dim');
+      bar.querySelectorAll('span').forEach(s=>s.classList.remove('on'));
+      if(same){ active = null; return; }
+      active = k;
+      chip.classList.add('active');
+      bar.classList.add('dim');
+      bar.querySelector(`span[data-k=&quot;${k}&quot;]`).classList.add('on');
+    });
+  });
+</script>
+</body>
+</html>
+"></iframe>
+    </div>
+  </section>
+
+  <section>
+    <h2>Блок 2 — Таблица результатов</h2>
+    <h3>Верификация без лишних модалок</h3>
+    <p>Таблица перестроена под основную задачу — быстрый разбор очереди сопоставлений. Действия вынесены в строку, цветовые сигналы согласованы со статусом, добавлены фильтр, сортировка и массовые операции.</p>
+    <ul class="tight">
+      <li><b>Инлайн ✓ / ✗</b> в колонке «Решение»; подтверждённая строка показывает статус и возврат в работу (↩); строка без кандидата предлагает «Подобрать».</li>
+      <li><b>Согласование цвета</b> — на решённых строках score становится приглушённым, чтобы красный процент не спорил с зелёным «Подтверждено».</li>
+      <li><b>Фильтр и сортировка</b> — сегменты по статусу (та же ось, что в легенде сводки) и сортировка по уверенности для триажа.</li>
+      <li><b>Массовый выбор</b> — чекбоксы + bulk-бар; <b>«Авто-подтвердить (N)»</b> со счётчиком и дизейблом при нуле.</li>
+    </ul>
+    <div class="callout">
+      <h4>Как проверить в мокапе</h4>
+      <p style="margin:0">Подтвердите жёлтую/красную строку — увидите приглушение бейджа. Снизьте «Порог» с <code>0.90</code> до <code>0.60</code> — счётчик у «Авто-подтвердить» пересчитается и кнопка станет активной. Переключите сегменты статуса и сортировку.</p>
+    </div>
+    <div class="demo" style="margin-top:18px">
+      <div class="demo-bar"><span class="dots"><i></i><i></i><i></i></span> Мокап: таблица результатов <span class="live">интерактивно</span></div>
+      <iframe src="about:blank" height="840" title="Мокап таблицы результатов" srcdoc="<!DOCTYPE html>
+<html lang=&quot;ru&quot;>
+<head>
+<meta charset=&quot;UTF-8&quot;>
+<meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;>
+<title>FastTender — таблица результатов (мокап)</title>
+<link rel=&quot;preconnect&quot; href=&quot;https://fonts.googleapis.com&quot;>
+<link rel=&quot;preconnect&quot; href=&quot;https://fonts.gstatic.com&quot; crossorigin>
+<link href=&quot;https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap&quot; rel=&quot;stylesheet&quot;>
+<style>
+  :root{
+    --bg:#f8fafc; --card:#fff; --border:#e2e8f0; --border-strong:#cbd5e1;
+    --ink:#0f172a; --ink-2:#334155; --muted:#64748b; --faint:#94a3b8;
+    --navy:#1e293b; --navy-hover:#0f172a; --blue:#2563eb; --blue-hover:#1d4ed8;
+    --row-hover:#f8fafc; --row-zebra:#fcfcfd;
+    --high:#16a34a; --high-bg:#dcfce7; --high-ink:#166534;
+    --mid:#d97706;  --mid-bg:#fef3c7;  --mid-ink:#92400e;
+    --low:#dc2626;  --low-bg:#fee2e2;  --low-ink:#991b1b;
+    --none:#94a3b8; --none-bg:#f1f5f9; --none-ink:#475569;
+    --radius:10px; --shadow:0 1px 2px rgba(15,23,42,.04),0 1px 3px rgba(15,23,42,.06);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink); padding:28px 24px;
+    font-family:&quot;Geist&quot;,-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px; margin:0 auto}
+  .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden}
+
+  /* ---- шапка карточки ---- */
+  .chead{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:16px 20px; border-bottom:1px solid var(--border); flex-wrap:wrap}
+  .chead h2{margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em}
+  .chead p{margin:3px 0 0; font-size:13px; color:var(--muted)}
+  .chead-actions{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+
+  .btn{font:inherit; font-size:13px; font-weight:500; border-radius:7px; padding:7px 13px; cursor:pointer; border:1px solid transparent; transition:background .12s,border-color .12s,color .12s; display:inline-flex; align-items:center; gap:7px; white-space:nowrap}
+  .btn:focus-visible{outline:2px solid var(--blue); outline-offset:1px}
+  .btn[disabled]{cursor:not-allowed; opacity:.55}
+  .btn-primary{background:var(--blue); color:#fff}
+  .btn-primary:not([disabled]):hover{background:var(--blue-hover)}
+  .btn-dark{background:var(--navy); color:#fff}
+  .btn-dark:hover{background:var(--navy-hover)}
+  .btn-outline{background:#fff; color:var(--ink); border-color:var(--border-strong)}
+  .btn-outline:hover{background:#f8fafc}
+  .btn-ghost{background:transparent; color:var(--ink-2)}
+  .btn-ghost:hover{background:#f1f5f9}
+  .btn-sm{padding:5px 10px; font-size:12.5px}
+
+  .threshold{display:inline-flex; align-items:center; gap:7px; border:1px solid var(--border-strong); border-radius:7px; padding:0 10px; height:34px; background:#fff}
+  .threshold label{font-size:12px; color:var(--muted)}
+  .threshold input{width:46px; border:none; font:inherit; font-size:13px; padding:6px 0; text-align:right; background:transparent}
+  .threshold input:focus{outline:none}
+
+  /* ---- тулбар фильтров ---- */
+  .toolbar{display:flex; align-items:center; gap:14px; padding:11px 20px; border-bottom:1px solid var(--border); background:#fcfcfd; flex-wrap:wrap}
+  .seg{display:inline-flex; background:#f1f5f9; border-radius:8px; padding:3px; gap:2px}
+  .seg button{font:inherit; font-size:12.5px; font-weight:500; color:var(--muted); border:none; background:none; padding:5px 11px; border-radius:6px; cursor:pointer; display:inline-flex; align-items:center; gap:6px; transition:background .12s,color .12s}
+  .seg button:hover{color:var(--ink)}
+  .seg button.on{background:#fff; color:var(--ink); box-shadow:0 1px 2px rgba(15,23,42,.08)}
+  .seg .cnt{font-size:11px; color:var(--faint); font-variant-numeric:tabular-nums}
+  .seg button.on .cnt{color:var(--muted)}
+
+  .sortwrap{margin-left:auto; display:inline-flex; align-items:center; gap:7px}
+  .sortwrap span{font-size:12px; color:var(--muted)}
+  select.sort{font:inherit; font-size:12.5px; color:var(--ink); border:1px solid var(--border-strong); border-radius:7px; padding:6px 26px 6px 10px; background:#fff; appearance:none; cursor:pointer;
+    background-image:url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.5'><path d='M6 9l6 6 6-6'/></svg>&quot;); background-repeat:no-repeat; background-position:right 8px center}
+
+  /* ---- bulk-бар ---- */
+  .bulk{display:none; align-items:center; gap:12px; padding:9px 20px; background:#eff6ff; border-bottom:1px solid #dbeafe; font-size:13px}
+  .bulk.show{display:flex}
+  .bulk .n{font-weight:600; color:var(--blue-hover)}
+  .bulk .sep{flex:1}
+
+  /* ---- таблица ---- */
+  .tscroll{max-height:560px; overflow:auto}
+  table{width:100%; border-collapse:collapse; font-size:13px}
+  thead th{position:sticky; top:0; z-index:5; background:#f8fafc; border-bottom:1px solid var(--border); text-align:left; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); padding:10px 14px; white-space:nowrap}
+  thead th.center{text-align:center}
+  tbody td{padding:11px 14px; border-bottom:1px solid #eef1f5; vertical-align:top}
+  tbody tr{transition:background .1s}
+  tbody tr:hover{background:var(--row-hover)}
+  tbody tr.sel{background:#eff6ff}
+  tbody tr.sel:hover{background:#e6f0ff}
+
+  .col-check{width:38px}
+  .col-num{width:46px; color:var(--faint); font-variant-numeric:tabular-nums}
+  .col-qty{width:92px; text-align:right; color:var(--ink-2); font-variant-numeric:tabular-nums}
+  .col-conf{width:120px}
+  .col-act{width:210px}
+
+  input[type=checkbox]{width:15px;height:15px;accent-color:var(--blue);cursor:pointer;margin-top:2px}
+
+  .pos-title{font-weight:500; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .pos-code{margin-top:2px; font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums}
+  .match-title{line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden}
+  .match-title.picked{color:var(--high-ink); font-weight:500}
+  .nomatch{color:var(--faint); font-style:normal}
+
+  /* левый акцент строки */
+  tbody tr td:first-child{position:relative}
+  tbody tr.r-confirmed td:first-child::before{content:&quot;&quot;; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--high)}
+  tbody tr.r-rejected td:first-child::before{content:&quot;&quot;; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--none)}
+
+  /* бейджи уверенности */
+  .conf{display:inline-flex; align-items:center; font-size:12px; font-weight:600; padding:2px 9px; border-radius:999px; font-variant-numeric:tabular-nums}
+  .conf.high{background:var(--high-bg); color:var(--high-ink)}
+  .conf.mid{background:var(--mid-bg); color:var(--mid-ink)}
+  .conf.low{background:var(--low-bg); color:var(--low-ink)}
+  .conf-dash{color:var(--faint)}
+  /* приглушённый вариант для уже решённых строк — чтобы красный score не спорил с зелёным «Подтверждено» */
+  .conf.muted{background:transparent; border:1px solid var(--border-strong); color:var(--muted); font-weight:500}
+
+  /* колонка решения */
+  .decision{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+  .status{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; padding:3px 9px; border-radius:999px}
+  .status.ok{background:var(--high-bg); color:var(--high-ink)}
+  .status.rej{background:var(--none-bg); color:var(--none-ink)}
+  .status .dot{width:6px;height:6px;border-radius:999px;background:currentColor}
+
+  .iconbtn{width:28px; height:28px; border-radius:6px; border:1px solid var(--border-strong); background:#fff; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; color:var(--muted); transition:all .12s; padding:0}
+  .iconbtn:hover{color:var(--ink); border-color:var(--faint)}
+  .iconbtn.ok:hover{color:var(--high); border-color:var(--high); background:var(--high-bg)}
+  .iconbtn.no:hover{color:var(--low); border-color:var(--low); background:var(--low-bg)}
+  .iconbtn:focus-visible{outline:2px solid var(--blue); outline-offset:1px}
+  .link{font:inherit; font-size:12.5px; color:var(--ink-2); background:none; border:none; cursor:pointer; padding:4px 6px; border-radius:6px}
+  .link:hover{background:#f1f5f9; color:var(--ink)}
+  .link.blue{color:var(--blue)}
+
+  .hidden{display:none !important}
+
+  /* футер */
+  .tfoot{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 20px; font-size:13px; color:var(--muted); flex-wrap:wrap}
+  .tfoot strong{color:var(--ink-2); font-variant-numeric:tabular-nums}
+  .pager{display:flex; align-items:center; gap:8px}
+
+  .note{max-width:1180px; margin:18px auto 0; font-size:12px; color:var(--faint); line-height:1.65}
+  .note code{background:#eef2f6; padding:1px 5px; border-radius:4px; color:var(--ink-2)}
+  .note b{color:var(--muted)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class=&quot;wrap&quot;>
+  <div class=&quot;card&quot;>
+
+    <!-- шапка -->
+    <div class=&quot;chead&quot;>
+      <div>
+        <h2>Результаты</h2>
+        <p>51 позиция · сопоставление с каталогом</p>
+      </div>
+      <div class=&quot;chead-actions&quot;>
+        <div class=&quot;threshold&quot;>
+          <label for=&quot;thr&quot;>Порог</label>
+          <input id=&quot;thr&quot; type=&quot;number&quot; step=&quot;0.05&quot; min=&quot;0&quot; max=&quot;1&quot; value=&quot;0.90&quot;>
+        </div>
+        <button class=&quot;btn btn-primary&quot; id=&quot;autoBtn&quot; disabled>Авто-подтвердить <span id=&quot;autoN&quot;>(0)</span></button>
+        <button class=&quot;btn btn-dark&quot;>Экспорт XLSX</button>
+        <button class=&quot;btn btn-outline&quot;>CSV</button>
+      </div>
+    </div>
+
+    <!-- фильтры + сортировка -->
+    <div class=&quot;toolbar&quot;>
+      <div class=&quot;seg&quot; id=&quot;seg&quot;>
+        <button data-f=&quot;all&quot; class=&quot;on&quot;>Все <span class=&quot;cnt&quot; data-c=&quot;all&quot;>0</span></button>
+        <button data-f=&quot;pending&quot;>Не проверено <span class=&quot;cnt&quot; data-c=&quot;pending&quot;>0</span></button>
+        <button data-f=&quot;confirmed&quot;>Подтверждено <span class=&quot;cnt&quot; data-c=&quot;confirmed&quot;>0</span></button>
+        <button data-f=&quot;nomatch&quot;>Нет кандидата <span class=&quot;cnt&quot; data-c=&quot;nomatch&quot;>0</span></button>
+      </div>
+      <div class=&quot;sortwrap&quot;>
+        <span>Сортировка</span>
+        <select class=&quot;sort&quot; id=&quot;sort&quot;>
+          <option value=&quot;num&quot;>по №</option>
+          <option value=&quot;conf-desc&quot;>уверенность ↓</option>
+          <option value=&quot;conf-asc&quot;>уверенность ↑</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- bulk -->
+    <div class=&quot;bulk&quot; id=&quot;bulk&quot;>
+      <span class=&quot;n&quot;><span id=&quot;bulkN&quot;>0</span> выбрано</span>
+      <button class=&quot;btn btn-ghost btn-sm&quot; id=&quot;bulkOk&quot;>✓ Подтвердить</button>
+      <button class=&quot;btn btn-ghost btn-sm&quot; id=&quot;bulkNo&quot;>✗ Отклонить</button>
+      <span class=&quot;sep&quot;></span>
+      <button class=&quot;link&quot; id=&quot;bulkClear&quot;>Снять выбор</button>
+    </div>
+
+    <!-- таблица -->
+    <div class=&quot;tscroll&quot;>
+      <table>
+        <thead>
+          <tr>
+            <th class=&quot;col-check&quot;><input type=&quot;checkbox&quot; id=&quot;all&quot; aria-label=&quot;Выбрать все&quot;></th>
+            <th class=&quot;col-num&quot;>№</th>
+            <th>Исходная позиция</th>
+            <th class=&quot;col-qty&quot;>Кол-во</th>
+            <th>Выбранная позиция</th>
+            <th class=&quot;col-conf&quot;>Уверенность</th>
+            <th class=&quot;col-act&quot;>Решение</th>
+          </tr>
+        </thead>
+        <tbody id=&quot;tb&quot;>
+          <!-- строки рендерятся скриптом -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- футер -->
+    <div class=&quot;tfoot&quot;>
+      <div>Строки <strong>1–13</strong> из <strong>51</strong></div>
+      <div class=&quot;pager&quot;>
+        <button class=&quot;btn btn-outline btn-sm&quot; disabled>←</button>
+        <span style=&quot;font-variant-numeric:tabular-nums&quot;>1 / 4</span>
+        <button class=&quot;btn btn-outline btn-sm&quot;>→</button>
+      </div>
+    </div>
+  </div>
+
+  <div class=&quot;note&quot;>
+    Мокап таблицы. Изменения против текущей версии: <b>инлайн-действия</b> (✓/✗) в колонке «Решение» — больше не нужно открывать «Кандидаты» ради подтверждения; <b>бейдж уверенности приглушается</b> на уже решённых строках (см. №18 — было красное «32%» рядом с зелёным «Подтверждено»); <b>фильтр по статусу</b> (куда ведёт легенда из сводки) и <b>сортировка по уверенности</b>; <b>массовый выбор</b> с bulk-баром; у «Авто-подтвердить» — <b>счётчик</b> затрагиваемых строк (при пороге <code>0.90</code> — ноль, кнопка выключена; снизьте до <code>0.60</code>). «Кол-во» очищено от хвостовых нулей.
+  </div>
+</div>
+
+<script>
+  // данные = реальные строки из спецификации (срез)
+  const rows = [
+    {n:1,  src:&quot;Электрод Esab OK 46.00 2ММ покрытие рутил-целлюлозное 8.5Г/А.Ч для сварки углеродистых и низколегированных сталей&quot;, qty:18,    match:&quot;Электроды ОК 46.00Р ф 2.0 ESAB ( 2 кг)&quot;, code:&quot;4600202WZ2&quot;, conf:null, status:&quot;confirmed&quot;},
+    {n:2,  src:&quot;Электрод Э50А ОК 48Р 4ММ покрытие основное для сварки углеродистых и низколегированных сталей ГОСТ 9467-75&quot;, qty:304,  match:&quot;Электроды ОК 48Р ф 4.0 ESAB ( 6 кг)&quot;, code:&quot;480P404AM0&quot;, conf:null, status:&quot;confirmed&quot;},
+    {n:3,  src:&quot;Электрод Esab УОНИИ-13/45 3ММ покрытие основное для сварки конструкций и изделий из углеродистых сталей&quot;, qty:50, match:null, code:null, conf:null, status:&quot;nomatch&quot;},
+    {n:4,  src:&quot;Электрод Esab OK 46.00 4ММ покрытие рутил-целлюлозное для сварки низкоуглеродистых и низколегированных сталей&quot;, qty:53, match:null, code:null, conf:null, status:&quot;nomatch&quot;},
+    {n:8,  src:&quot;Электроды УОНИ-13/55 3ММ&quot;, qty:170, match:&quot;Электроды УОНИ-13/55 ф 3.0 СЗСМ ( 3 кг)&quot;, code:null, conf:58, status:&quot;confirmed&quot;},
+    {n:9,  src:&quot;Электроды Esab УОНИ-13/55 4ММ&quot;, qty:220, match:&quot;Электроды УОНИИ-13/55 ф 2.5 ESAB ( 4.5 кг)&quot;, code:&quot;5676253WE0&quot;, conf:63, status:&quot;pending&quot;},
+    {n:18, src:&quot;Электрод РИМЕТАЛК Т-620 5ММ покрытие основное 9Г/А.Ч для наплавки&quot;, qty:300, match:&quot;Электроды Т-620 ф 5.0 Риметалк ( 5 кг)&quot;, code:null, conf:32, status:&quot;confirmed&quot;},
+    {n:20, src:&quot;Электрод СЗСМ УОНИ-13/55 5ММ&quot;, qty:240, match:&quot;Электроды УОНИ-13/55 ф 5.0 СЗСМ ( 5.5 кг)&quot;, code:null, conf:63, status:&quot;pending&quot;},
+    {n:22, src:&quot;Электрод Esab OK 67.60 67603230T0 3.2ММ покрытие кисло-рутиловое для сварки низкоуглеродистых и низколегированных сталей&quot;, qty:360, match:&quot;Электроды ОК 67.60 ф 3.2 ESAB ( 4.3 кг)&quot;, code:&quot;6760323020&quot;, conf:7, status:&quot;pending&quot;},
+    {n:26, src:&quot;Электрод Esab УОНИИ-13/55 3913404WM0 4ММ покрытие основное для сварки углеродистых сталей&quot;, qty:100, match:&quot;Электроды УОНИИ-13/55 МОСТ ф 4.0 ESAB ( 6 кг)&quot;, code:&quot;3913404WM0&quot;, conf:25, status:&quot;confirmed&quot;},
+    {n:34, src:&quot;Электрод Esab ОК 46.00Р 3ММ&quot;, qty:250, match:&quot;Электроды ОК 46.00Р ф 3.0 ESAB ( 5.3 кг)&quot;, code:&quot;4600303AE0&quot;, conf:62, status:&quot;pending&quot;},
+    {n:45, src:&quot;Электрод вольфрамовый WP-175 СС 2.4ММ цвет зеленый&quot;, qty:21, match:&quot;Электроды вольфрамовые WP 2.0* 175 мм зеленый&quot;, code:null, conf:64, status:&quot;pending&quot;},
+    {n:50, src:&quot;Электрод OK 46.00 3ММ&quot;, qty:250, match:&quot;Электроды SE-46.00 ф 2.5&quot;, code:null, conf:42, status:&quot;pending&quot;},
+  ];
+
+  const fmtQty = q => Number(q).toLocaleString('ru-RU',{maximumFractionDigits:4});
+  const confClass = c => c>=90?'high':c>=50?'mid':'low';
+  const esc = s => s.replace(/[&amp;<>&quot;]/g,m=>({'&amp;':'&amp;amp;','<':'&amp;lt;','>':'&amp;gt;','&quot;':'&amp;quot;'}[m]));
+
+  const tb = document.getElementById('tb');
+
+  function confCell(r){
+    if(r.conf===null) return '<span class=&quot;conf-dash&quot;>—</span>';
+    // на решённых строках приглушаем, чтобы не спорил с цветом статуса
+    const muted = r.status==='confirmed' || r.status==='rejected';
+    return `<span class=&quot;conf ${muted?'muted':confClass(r.conf)}&quot; title=&quot;score ${(r.conf/100).toFixed(2)}&quot;>${r.conf}%</span>`;
+  }
+
+  function decisionCell(r){
+    if(r.status==='confirmed') return `
+      <div class=&quot;decision&quot;>
+        <span class=&quot;status ok&quot;><span class=&quot;dot&quot;></span>Подтверждено</span>
+        <button class=&quot;iconbtn&quot; title=&quot;Вернуть в работу&quot; data-act=&quot;undo&quot;><svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><path d=&quot;M3 7v6h6&quot;/><path d=&quot;M3 13a9 9 0 105-8&quot;/></svg></button>
+      </div>`;
+    if(r.status==='rejected') return `
+      <div class=&quot;decision&quot;>
+        <span class=&quot;status rej&quot;><span class=&quot;dot&quot;></span>Отклонено</span>
+        <button class=&quot;iconbtn&quot; title=&quot;Вернуть в работу&quot; data-act=&quot;undo&quot;><svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><path d=&quot;M3 7v6h6&quot;/><path d=&quot;M3 13a9 9 0 105-8&quot;/></svg></button>
+      </div>`;
+    if(r.status==='nomatch') return `
+      <div class=&quot;decision&quot;>
+        <button class=&quot;link blue&quot; data-act=&quot;pick&quot;><svg width=&quot;13&quot; height=&quot;13&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot; style=&quot;vertical-align:-2px;margin-right:3px&quot;><circle cx=&quot;11&quot; cy=&quot;11&quot; r=&quot;7&quot;/><path d=&quot;M21 21l-4-4&quot;/></svg>Подобрать</button>
+      </div>`;
+    // pending
+    return `
+      <div class=&quot;decision&quot;>
+        <button class=&quot;iconbtn ok&quot; title=&quot;Подтвердить выбранного кандидата&quot; data-act=&quot;ok&quot;><svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2.4&quot;><path d=&quot;M20 6L9 17l-5-5&quot;/></svg></button>
+        <button class=&quot;iconbtn no&quot; title=&quot;Отклонить&quot; data-act=&quot;no&quot;><svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2.4&quot;><path d=&quot;M18 6L6 18M6 6l12 12&quot;/></svg></button>
+        <button class=&quot;link&quot; data-act=&quot;cand&quot;>Кандидаты</button>
+      </div>`;
+  }
+
+  function matchCell(r){
+    if(!r.match) return '<span class=&quot;nomatch&quot;>Нет совпадений</span>';
+    const picked = r.status==='confirmed';
+    return `<div class=&quot;match-title ${picked?'picked':''}&quot; title=&quot;${esc(r.match)}&quot;>${esc(r.match)}</div>${r.code?`<div class=&quot;pos-code&quot;>${r.code}</div>`:''}`;
+  }
+
+  function rowHtml(r){
+    const cls = r.status==='confirmed'?'r-confirmed':r.status==='rejected'?'r-rejected':'';
+    return `<tr class=&quot;${cls}&quot; data-n=&quot;${r.n}&quot; data-status=&quot;${r.status}&quot; data-conf=&quot;${r.conf===null?-1:r.conf}&quot;>
+      <td class=&quot;col-check&quot;><input type=&quot;checkbox&quot; class=&quot;rc&quot; aria-label=&quot;Выбрать строку ${r.n}&quot;></td>
+      <td class=&quot;col-num&quot;>${r.n}</td>
+      <td><div class=&quot;pos-title&quot; title=&quot;${esc(r.src)}&quot;>${esc(r.src)}</div></td>
+      <td class=&quot;col-qty&quot;>${fmtQty(r.qty)}</td>
+      <td>${matchCell(r)}</td>
+      <td class=&quot;col-conf&quot;>${confCell(r)}</td>
+      <td class=&quot;col-act&quot;>${decisionCell(r)}</td>
+    </tr>`;
+  }
+
+  function render(){
+    let list = rows.slice();
+    const s = document.getElementById('sort').value;
+    if(s==='conf-desc') list.sort((a,b)=>(b.conf??-1)-(a.conf??-1));
+    if(s==='conf-asc')  list.sort((a,b)=>(a.conf??999)-(b.conf??999));
+    tb.innerHTML = list.map(rowHtml).join('');
+    applyFilter();
+    wireRows();
+    updateCounts();
+    updateAuto();
+  }
+
+  // фильтр
+  let filter='all';
+  function applyFilter(){
+    tb.querySelectorAll('tr').forEach(tr=>{
+      const st=tr.dataset.status;
+      const show = filter==='all' || st===filter;
+      tr.classList.toggle('hidden', !show);
+    });
+  }
+  document.getElementById('seg').addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    document.querySelectorAll('#seg button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); filter=b.dataset.f; applyFilter();
+  });
+  document.getElementById('sort').addEventListener('change',render);
+
+  function updateCounts(){
+    const c={all:rows.length,pending:0,confirmed:0,nomatch:0};
+    rows.forEach(r=>{ if(c[r.status]!==undefined) c[r.status]++; });
+    document.querySelectorAll('#seg .cnt').forEach(el=>{ el.textContent=c[el.dataset.c]??0; });
+  }
+
+  // действия по строке
+  function wireRows(){
+    tb.querySelectorAll('tr').forEach(tr=>{
+      const n=+tr.dataset.n; const r=rows.find(x=>x.n===n);
+      tr.querySelectorAll('[data-act]').forEach(btn=>{
+        btn.addEventListener('click',()=>{
+          const a=btn.dataset.act;
+          if(a==='ok') r.status='confirmed';
+          if(a==='no') r.status='rejected';
+          if(a==='undo') r.status='pending';
+          render();
+        });
+      });
+      const cb=tr.querySelector('.rc');
+      cb.addEventListener('change',()=>{ tr.classList.toggle('sel',cb.checked); syncBulk(); });
+    });
+    document.getElementById('all').checked=false;
+  }
+
+  // массовый выбор
+  const bulk=document.getElementById('bulk');
+  document.getElementById('all').addEventListener('change',e=>{
+    tb.querySelectorAll('tr:not(.hidden) .rc').forEach(cb=>{cb.checked=e.target.checked; cb.closest('tr').classList.toggle('sel',e.target.checked);});
+    syncBulk();
+  });
+  function syncBulk(){
+    const sel=[...tb.querySelectorAll('.rc:checked')];
+    document.getElementById('bulkN').textContent=sel.length;
+    bulk.classList.toggle('show',sel.length>0);
+  }
+  function bulkApply(status){
+    tb.querySelectorAll('.rc:checked').forEach(cb=>{
+      const n=+cb.closest('tr').dataset.n; const r=rows.find(x=>x.n===n);
+      if(r.status!=='nomatch') r.status=status;
+    });
+    render(); syncBulk();
+  }
+  document.getElementById('bulkOk').addEventListener('click',()=>bulkApply('confirmed'));
+  document.getElementById('bulkNo').addEventListener('click',()=>bulkApply('rejected'));
+  document.getElementById('bulkClear').addEventListener('click',()=>{
+    tb.querySelectorAll('.rc:checked').forEach(cb=>{cb.checked=false; cb.closest('tr').classList.remove('sel');});
+    document.getElementById('all').checked=false; syncBulk();
+  });
+
+  // авто-подтвердить со счётчиком
+  const thr=document.getElementById('thr'), autoBtn=document.getElementById('autoBtn'), autoN=document.getElementById('autoN');
+  function autoTargets(){
+    const t=Math.round((parseFloat(thr.value)||0)*100);
+    return rows.filter(r=>r.status==='pending' &amp;&amp; r.conf!==null &amp;&amp; r.conf>=t);
+  }
+  function updateAuto(){
+    const k=autoTargets().length;
+    autoN.textContent=`(${k})`;
+    autoBtn.disabled = k===0;
+  }
+  thr.addEventListener('input',updateAuto);
+  autoBtn.addEventListener('click',()=>{ autoTargets().forEach(r=>r.status='confirmed'); render(); });
+
+  render();
+</script>
+</body>
+</html>
+"></iframe>
+    </div>
+  </section>
+
+  <section>
+    <h2>Заметки по интеграции</h2>
+    <ul class="tight">
+      <li><b>Данные.</b> Счётчики сегментов, проценты прогресса и доли категорий в мокапах захардкожены/считаются по показанному срезу — на проде берутся из бэкенда. У сегментов распределения <code>flex</code> = количество в категории; пустая категория (<code>flex:0.001</code>) даёт почти невидимую полоску.</li>
+      <li><b>Логика бейджа уверенности.</b> Приглушение завязано на <code>status ∈ {confirmed, rejected}</code> — ложится на серверный <code>ПриЗаписи</code>-флоу с аудитом. <code>conf = null</code> рендерится как <code>—</code>.</li>
+      <li><b>Связка сводка → таблица.</b> Фильтр легенды и сегментный фильтр таблицы — одна ось состояния; разумно гонять через общий параметр (категория уверенности / статус).</li>
+      <li><b>Действия строки.</b> ✓ подтверждает текущего кандидата из «Выбранной позиции»; ✗ → <code>rejected</code>; «Подобрать» / «Кандидаты» открывают модалку выбора. Подтверждение пишет запись аудита.</li>
+      <li><b>Авто-подтверждение.</b> Цель = строки <code>pending &amp;&amp; conf ≥ порог·100</code>; каждое подтверждение проходит тем же путём аудита, что и ручное.</li>
+      <li><b>Доступность.</b> Видимый <code>:focus-visible</code>, <code>aria-label</code> на чекбоксах и иконочных кнопках, <code>prefers-reduced-motion</code> уважается. Шрифт Geist через Google Fonts с системным фоллбэком.</li>
+    </ul>
+  </section>
+
+  <div class="foot">FastTender · ревизия интерфейса страницы спецификации · мокапы встроены и интерактивны · стиль Clean SaaS</div>
+</div>
+</body>
+</html>
