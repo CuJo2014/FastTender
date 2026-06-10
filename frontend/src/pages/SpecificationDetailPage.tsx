@@ -26,6 +26,7 @@ const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
   { id: "source", label: "Исходная позиция", default: 360 },
   { id: "qty", label: "Кол-во", default: 92 },
   { id: "chosen", label: "Выбранная позиция", default: 360 },
+  { id: "confidence", label: "Уверенность", default: 112 },
   { id: "decision", label: "Решение", default: 128 },
   { id: "actions", label: "", default: 108 },
 ];

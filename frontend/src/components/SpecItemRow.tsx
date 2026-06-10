@@ -4,6 +4,7 @@ import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { CandidatesTable } from "./CandidatesTable";
 import { CatalogSearchBox } from "./CatalogSearchBox";
+import { ConfidenceCell } from "./ConfidenceCell";
 
 interface Props {
   item: SpecItemRead;
@@ -36,6 +37,15 @@ export function SpecItemRow({
   // «Выбранная позиция»: после подтверждения — реально выбранная (в т.ч.
   // найденная поиском, не из топ-кандидатов); до выбора — топ-кандидат.
   const chosen = item.verification?.chosen_item ?? null;
+  // Уверенность сопоставления для строки: после матчинга и до решения это
+  // топ-кандидат; если позиция уже выбрана — кандидат с этим item_id (поиск
+  // вне топа кандидатов уверенности не несёт → прочерк).
+  const chosenItemId = item.verification?.chosen_item_id ?? null;
+  const matchCandidate = chosenItemId
+    ? [...item.candidates_catalog, ...item.candidates_suppliers].find(
+        (c) => c.item_id === chosenItemId,
+      ) ?? null
+    : topCatalog ?? null;
 
   // При разворачивании строка товара «прилипает» под шапкой — видно, что
   // подбираем, пока листаешь кандидатов/результаты поиска.
@@ -111,6 +121,16 @@ export function SpecItemRow({
           )}
         </td>
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
+          {matchCandidate ? (
+            <ConfidenceCell
+              confidence={matchCandidate.confidence}
+              explanation={matchCandidate.explanation}
+            />
+          ) : (
+            <span className="text-sm text-slate-400">—</span>
+          )}
+        </td>
+        <td className={`${td}${tdSticky}`} style={stickyStyle}>
           {verificationBadge}
         </td>
         <td className={`${td} text-right${tdSticky}`} style={stickyStyle}>
@@ -126,7 +146,7 @@ export function SpecItemRow({
 
       {expanded && (
         <tr>
-          <td colSpan={6} className="bg-slate-50 px-4 py-4">
+          <td colSpan={7} className="bg-slate-50 px-4 py-4">
             <div className="space-y-3">
               {/* Поиск — наверху, предзаполнен именем позиции. Контекст
                   (что подбираем) виден в «прилипшей» строке товара выше. */}
