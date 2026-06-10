@@ -5,6 +5,7 @@ import { Button } from "./ui/Button";
 import { CandidatesTable } from "./CandidatesTable";
 import { CatalogSearchBox } from "./CatalogSearchBox";
 import { ConfidenceCell } from "./ConfidenceCell";
+import { formatQuantity } from "../lib/format";
 
 interface Props {
   item: SpecItemRead;
@@ -92,7 +93,8 @@ export function SpecItemRow({
           className={`${td} tabular-nums text-slate-600${tdSticky}`}
           style={stickyStyle}
         >
-          {item.quantity ?? "—"} {item.unit_raw ?? ""}
+          {formatQuantity(item.quantity)}
+          {item.quantity != null && item.unit_raw ? ` ${item.unit_raw}` : ""}
         </td>
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
           {chosen ? (
@@ -125,6 +127,7 @@ export function SpecItemRow({
             <ConfidenceCell
               confidence={matchCandidate.confidence}
               explanation={matchCandidate.explanation}
+              muted={!!item.verification}
             />
           ) : (
             <span className="text-sm text-slate-400">—</span>
@@ -235,7 +238,7 @@ export function SpecItemRow({
 function renderVerificationBadge(item: SpecItemRead) {
   const v = item.verification;
   if (!v) {
-    return <Badge tone="neutral">Не верифицировано</Badge>;
+    return <Badge tone="neutral">Не проверено</Badge>;
   }
   switch (v.decision) {
     case "confirmed":

@@ -33,6 +33,20 @@ export function formatPrice(value: string | null | undefined): string {
   return num.toLocaleString("ru-RU", { maximumFractionDigits: 4 });
 }
 
+/**
+ * Количество без хвостовых нулей: `18.0000 → 18`, `147.4900 → 147,49`.
+ * `toLocaleString` сам отбрасывает незначащие нули; держим до 4 знаков
+ * (как в исходных данных спеки). null/пустое → «—».
+ */
+export function formatQuantity(
+  value: string | number | null | undefined,
+): string {
+  if (value === null || value === undefined || value === "") return "—";
+  const num = Number(value);
+  if (Number.isNaN(num)) return String(value);
+  return num.toLocaleString("ru-RU", { maximumFractionDigits: 4 });
+}
+
 const STATUS_LABELS: Record<SpecificationStatus, string> = {
   uploaded: "Загружен",
   parsing: "Парсинг…",

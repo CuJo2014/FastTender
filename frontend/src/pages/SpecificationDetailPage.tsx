@@ -51,7 +51,7 @@ function DetailContent({ specId }: { specId: string }) {
   const queryClient = useQueryClient();
   const [autoConfirmThreshold, setAutoConfirmThreshold] = useState("0.9");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(100);
 
   // Измеряем высоту липкой шапки спецификации чтобы шапка таблицы и
   // развёрнутая строка товара приклеивались ровно ниже неё (без перекрытия).
@@ -276,9 +276,12 @@ function DetailContent({ specId }: { specId: string }) {
           title={spec.source_filename}
           description={<span>Загружен: {formatDateTime(spec.created_at)}</span>}
           actions={
-            <Link to="/specifications">
-              <Button variant="ghost">← К списку</Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link to="/specifications">
+                <Button variant="ghost">← К списку</Button>
+              </Link>
+              <SpecOverflowMenu specId={specId} status={spec.status} />
+            </div>
           }
         />
         <CardBody className="flex flex-wrap items-center gap-6">
@@ -335,8 +338,6 @@ function DetailContent({ specId }: { specId: string }) {
               }
             />
           </div>
-
-          <CancelButton specId={specId} status={spec.status} />
 
           {isInProgress(spec.status) && (
             <div className="flex basis-full items-center gap-4">
@@ -867,7 +868,7 @@ function AbortButton({ specId }: { specId: string }) {
   );
 }
 
-function CancelButton({
+function SpecOverflowMenu({
   specId,
   status,
 }: {
@@ -875,73 +876,110 @@ function CancelButton({
   status: SpecificationStatus;
 }) {
   const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
   const [reason, setReason] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
 
   const mutation = useMutation({
     mutationFn: () => api.cancelSpecification(specId, reason.trim() || undefined),
     onSuccess: () => {
-      setOpen(false);
+      setFormOpen(false);
       setReason("");
       queryClient.invalidateQueries({ queryKey: ["specifications", specId] });
       queryClient.invalidateQueries({ queryKey: ["specifications"] });
     },
   });
 
-  // Кнопка не нужна для уже отменённых / выгруженных
+  // Закрытие выпадающего меню по клику вне (форму отказа закрывает только
+  // явное «Передумал» — чтобы случайный клик не сбрасывал введённую причину).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [menuOpen]);
+
+  // Единственный пункт меню — деструктивный отказ; для уже отменённых /
+  // выгруженных он недоступен, поэтому и «⋯» прятать целиком.
   if (status === "cancelled" || status === "exported") return null;
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="text-xs text-red-600 hover:underline"
-        title="Отказаться от обеспечения поставки"
-      >
-        Отказаться от спецификации
-      </button>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3">
-      <div className="text-sm font-medium text-red-900">
-        Отказаться от поставки?
-      </div>
-      <textarea
-        value={reason}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Причина (опционально)"
-        rows={2}
-        maxLength={1024}
-        className="block w-full rounded border border-red-300 bg-white px-2 py-1 text-sm"
-      />
-      <div className="flex items-center gap-2">
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => mutation.mutate()}
-          disabled={mutation.isPending}
+    <div ref={ref} className="relative">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((v) => !v)}
+        title="Ещё"
+      >
+        ⋯
+      </Button>
+
+      {menuOpen && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full z-30 mt-1 w-64 rounded-md border border-slate-200 bg-white p-1 shadow-lg"
         >
-          {mutation.isPending ? "Отказ…" : "Подтвердить отказ"}
-        </Button>
-        <button
-          type="button"
-          onClick={() => {
-            setOpen(false);
-            setReason("");
-          }}
-          className="text-xs text-slate-500 hover:underline"
-        >
-          Передумал
-        </button>
-      </div>
-      {mutation.isError && (
-        <div className="text-xs text-red-700">
-          {mutation.error instanceof ApiError
-            ? `Ошибка ${mutation.error.status}`
-            : "Не удалось отменить"}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setMenuOpen(false);
+              setFormOpen(true);
+            }}
+            className="flex w-full items-center gap-2 rounded px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+          >
+            Отказаться от спецификации
+          </button>
+        </div>
+      )}
+
+      {formOpen && (
+        <div className="absolute right-0 top-full z-30 mt-1 flex w-80 flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3 shadow-lg">
+          <div className="text-sm font-medium text-red-900">
+            Отказаться от поставки?
+          </div>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Причина (опционально)"
+            rows={2}
+            maxLength={1024}
+            className="block w-full rounded border border-red-300 bg-white px-2 py-1 text-sm"
+          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending ? "Отказ…" : "Подтвердить отказ"}
+            </Button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormOpen(false);
+                setReason("");
+              }}
+              className="text-xs text-slate-500 hover:underline"
+            >
+              Передумал
+            </button>
+          </div>
+          {mutation.isError && (
+            <div className="text-xs text-red-700">
+              {mutation.error instanceof ApiError
+                ? `Ошибка ${mutation.error.status}`
+                : "Не удалось отменить"}
+            </div>
+          )}
         </div>
       )}
     </div>
