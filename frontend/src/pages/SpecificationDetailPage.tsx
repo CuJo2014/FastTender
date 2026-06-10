@@ -18,6 +18,7 @@ import { ProgressBar } from "../components/ProgressBar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { SpecItemRow } from "../components/SpecItemRow";
+import { SpecMetrics } from "../components/SpecMetrics";
 import { useColumnWidths } from "../hooks/useColumnWidths";
 
 // Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
@@ -309,40 +310,7 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
 
-          <div className="grid flex-1 grid-cols-6 gap-4 text-center text-sm">
-            <Counter label="Всего" value={spec.counts.items_total} />
-            <Counter
-              label="≥ 90%"
-              value={spec.counts.items_matched_high}
-              valueClass="text-conf-high"
-            />
-            <Counter
-              label="50–90%"
-              value={spec.counts.items_matched_medium}
-              valueClass="text-conf-medium"
-            />
-            <Counter
-              label="< 50%"
-              value={spec.counts.items_low}
-              valueClass="text-conf-low"
-            />
-            <Counter
-              label="Нет кандидата"
-              value={spec.counts.items_no_candidate}
-              valueClass="text-slate-500"
-            />
-            <Counter
-              label="Закрыто"
-              value={`${spec.counts.items_verified} / ${spec.counts.items_total}`}
-              valueClass={
-                spec.counts.items_verified === spec.counts.items_total
-                  ? "text-conf-high"
-                  : spec.counts.items_verified > 0
-                  ? "text-conf-medium"
-                  : "text-slate-400"
-              }
-            />
-          </div>
+          <SpecMetrics counts={spec.counts} />
 
           {isInProgress(spec.status) && (
             <div className="flex basis-full items-center gap-4">
@@ -598,27 +566,6 @@ function Pagination({
         >
           →
         </Button>
-      </div>
-    </div>
-  );
-}
-
-function Counter({
-  label,
-  value,
-  valueClass,
-}: {
-  label: string;
-  value: number | string;
-  valueClass?: string;
-}) {
-  return (
-    <div>
-      <div className="text-xs uppercase text-slate-500">{label}</div>
-      <div
-        className={"mt-1 text-2xl font-semibold tabular-nums " + (valueClass ?? "")}
-      >
-        {value}
       </div>
     </div>
   );
