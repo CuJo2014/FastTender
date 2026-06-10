@@ -35,6 +35,8 @@ export function SpecItemRow({
 
   const verificationBadge = renderVerificationBadge(item);
   const topCatalog = item.candidates_catalog[0];
+  // Топ-кандидат для инлайн-подтверждения: каталог приоритетнее прайсов.
+  const topMatch = topCatalog ?? item.candidates_suppliers[0] ?? null;
   // «Выбранная позиция»: после подтверждения — реально выбранная (в т.ч.
   // найденная поиском, не из топ-кандидатов); до выбора — топ-кандидат.
   const chosen = item.verification?.chosen_item ?? null;
@@ -134,7 +136,51 @@ export function SpecItemRow({
           )}
         </td>
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
-          {verificationBadge}
+          {item.verification ? (
+            <div className="flex items-center gap-2">
+              {verificationBadge}
+              {onUnverify && (
+                <button
+                  type="button"
+                  title="Вернуть в работу"
+                  onClick={() => onUnverify(item.id)}
+                  disabled={pending}
+                  className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                >
+                  ↩
+                </button>
+              )}
+            </div>
+          ) : topMatch ? (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                title="Подтвердить выбранную позицию"
+                onClick={() => onVerify(item.id, "confirmed", topMatch.item_id)}
+                disabled={pending}
+                className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-600 disabled:opacity-50"
+              >
+                ✓
+              </button>
+              <button
+                type="button"
+                title="Отклонить"
+                onClick={() => onVerify(item.id, "rejected", null)}
+                disabled={pending}
+                className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-red-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Подобрать
+            </button>
+          )}
         </td>
         <td className={`${td} text-right${tdSticky}`} style={stickyStyle}>
           <Button
