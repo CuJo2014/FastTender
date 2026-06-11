@@ -111,7 +111,7 @@ export function SpecItemRow({
           )}
         </td>
         <td
-          className={`${td} tabular-nums text-slate-500${tdSticky}`}
+          className={`px-2 py-2 tabular-nums text-slate-500${tdSticky}`}
           style={stickyStyle}
         >
           <div className="flex items-center gap-1">

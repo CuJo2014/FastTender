@@ -25,7 +25,7 @@ import { useColumnWidths } from "../hooks/useColumnWidths";
 // Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
 const SPEC_COLUMNS: { id: string; label: string; default: number }[] = [
   { id: "check", label: "", default: 40 },
-  { id: "num", label: "№", default: 44 },
+  { id: "num", label: "№", default: 88 },
   { id: "source", label: "Исходная позиция", default: 360 },
   { id: "qty", label: "Кол-во", default: 92 },
   { id: "chosen", label: "Выбранная позиция", default: 360 },
@@ -413,12 +413,6 @@ function DetailContent({ specId }: { specId: string }) {
           {/* Компактная строка: навигация + малозначимые имя файла/дата + меню.
               Раньше это был высокий CardHeader — он съедал место под список. */}
           <div className="flex basis-full items-center gap-2 text-sm">
-            <Link
-              to="/specifications"
-              className="shrink-0 text-slate-500 hover:text-slate-900"
-            >
-              ← К списку
-            </Link>
             <span
               className="truncate font-medium text-slate-700"
               title={spec.source_filename}
@@ -428,7 +422,13 @@ function DetailContent({ specId }: { specId: string }) {
             <span className="shrink-0 text-xs text-slate-400">
               Загружен {formatDateTime(spec.created_at)}
             </span>
-            <div className="ml-auto shrink-0">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <Link
+                to="/specifications"
+                className="text-slate-500 hover:text-slate-900"
+              >
+                ← К списку
+              </Link>
               <SpecOverflowMenu specId={specId} status={spec.status} />
             </div>
           </div>
