@@ -409,19 +409,29 @@ function DetailContent({ specId }: { specId: string }) {
     <div className="space-y-6">
       <div ref={setStickyHeaderEl} className="sticky top-14 z-20 bg-slate-50 pb-2">
       <Card>
-        <CardHeader
-          title={spec.source_filename}
-          description={<span>Загружен: {formatDateTime(spec.created_at)}</span>}
-          actions={
-            <div className="flex items-center gap-2">
-              <Link to="/specifications">
-                <Button variant="ghost">← К списку</Button>
-              </Link>
+        <CardBody className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          {/* Компактная строка: навигация + малозначимые имя файла/дата + меню.
+              Раньше это был высокий CardHeader — он съедал место под список. */}
+          <div className="flex basis-full items-center gap-2 text-sm">
+            <Link
+              to="/specifications"
+              className="shrink-0 text-slate-500 hover:text-slate-900"
+            >
+              ← К списку
+            </Link>
+            <span
+              className="truncate font-medium text-slate-700"
+              title={spec.source_filename}
+            >
+              {spec.source_filename}
+            </span>
+            <span className="shrink-0 text-xs text-slate-400">
+              Загружен {formatDateTime(spec.created_at)}
+            </span>
+            <div className="ml-auto shrink-0">
               <SpecOverflowMenu specId={specId} status={spec.status} />
             </div>
-          }
-        />
-        <CardBody className="flex flex-wrap items-center gap-6">
+          </div>
           <div>
             <div className="text-xs uppercase text-slate-500">Статус</div>
             <div className="mt-1">
@@ -592,46 +602,6 @@ function DetailContent({ specId }: { specId: string }) {
             }}
           />
 
-          {selected.size > 0 && (
-            <div className="flex flex-wrap items-center gap-3 border-b border-blue-200 bg-blue-50 px-4 py-2 text-sm">
-              <span className="font-medium text-blue-800">
-                {selected.size} выбрано
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => bulkMutation.mutate("confirmed")}
-                disabled={bulkMutation.isPending}
-              >
-                ✓ Подтвердить
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => bulkMutation.mutate("rejected")}
-                disabled={bulkMutation.isPending}
-              >
-                ✕ Отклонить
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => bulkMutation.mutate("forwarded")}
-                disabled={bulkMutation.isPending}
-                title="Передать выбранные строки в группу МОС"
-              >
-                ↗ Передать
-              </Button>
-              <button
-                type="button"
-                onClick={clearSelection}
-                className="ml-auto text-slate-500 hover:underline"
-              >
-                Снять выбор
-              </button>
-            </div>
-          )}
-
           {itemsQuery.isLoading ? (
             <div className="px-6 py-8 text-center text-slate-500">
               Загрузка строк…
@@ -747,6 +717,51 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
         </Card>
+      )}
+
+      {/* Плавающая панель массовых действий: закреплена у нижнего края экрана,
+          видна только при выделении — действия (Подтвердить/Отклонить/Передать)
+          доступны при любом скролле и НЕ отнимают постоянной высоты у списка. */}
+      {selected.size > 0 && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-2 rounded-full border border-blue-200 bg-white px-4 py-2 text-sm shadow-lg">
+            <span className="font-medium text-blue-800">
+              {selected.size} выбрано
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => bulkMutation.mutate("confirmed")}
+              disabled={bulkMutation.isPending}
+            >
+              ✓ Подтвердить
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => bulkMutation.mutate("rejected")}
+              disabled={bulkMutation.isPending}
+            >
+              ✕ Отклонить
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => bulkMutation.mutate("forwarded")}
+              disabled={bulkMutation.isPending}
+              title="Передать выбранные строки в группу МОС"
+            >
+              ↗ Передать
+            </Button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="ml-1 text-slate-500 hover:underline"
+            >
+              Снять выбор
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
