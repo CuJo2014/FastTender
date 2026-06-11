@@ -19,7 +19,7 @@ import { ProgressBar } from "../components/ProgressBar";
 import { Button } from "../components/ui/Button";
 import { Card, CardBody, CardHeader } from "../components/ui/Card";
 import { SpecItemRow } from "../components/SpecItemRow";
-import { SpecMetrics } from "../components/SpecMetrics";
+import { SpecMetrics, type SegmentKey } from "../components/SpecMetrics";
 import { useColumnWidths } from "../hooks/useColumnWidths";
 
 // Колонки таблицы строк спеки. id — СТАБИЛЬНЫЙ ключ ширины (не индекс).
@@ -39,8 +39,18 @@ function widthOf(widths: Record<string, number>, id: string): number {
 }
 
 // Сегментный фильтр (ось состояния) и сортировка — значения совпадают с
-// серверными (ItemStatusFilter / ItemSort на бэке).
-type StatusFilter = "all" | "pending" | "confirmed" | "rejected" | "no_candidate";
+// серверными (ItemStatusFilter / ItemSort на бэке). Бакеты качества
+// high/mid/low/no_candidate — ось качества (по топ-1 кандидату); модель
+// «один активный фильтр» (оси не комбинируются).
+type StatusFilter =
+  | "all"
+  | "pending"
+  | "confirmed"
+  | "rejected"
+  | "high"
+  | "mid"
+  | "low"
+  | "no_candidate";
 type SortBy = "line_number" | "confidence_desc" | "confidence_asc";
 import {
   formatDateTime,
@@ -380,6 +390,21 @@ function DetailContent({ specId }: { specId: string }) {
   const toggleBookmark = (id: string) =>
     bookmarkMutation.mutate(spec.bookmarked_item_id === id ? null : id);
 
+  // Качество сопоставления как фильтр таблицы (чипы сводки). «none» бэка —
+  // это no_candidate. Повторный клик по активному бакету снимает фильтр.
+  const activeQuality: SegmentKey | null =
+    statusFilter === "no_candidate"
+      ? "none"
+      : statusFilter === "high" || statusFilter === "mid" || statusFilter === "low"
+        ? statusFilter
+        : null;
+  const selectQuality = (key: SegmentKey) => {
+    const target: StatusFilter = key === "none" ? "no_candidate" : key;
+    setStatusFilter((prev) => (prev === target ? "all" : target));
+    setPage(1);
+    clearSelection();
+  };
+
   // Переход «К закладке»: сбрасываем фильтр/сортировку (чтобы строка точно
   // была видна и совпала с расчётом страницы по line_number), прыгаем на её
   // страницу и подсвечиваем.
@@ -435,7 +460,11 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
 
-          <SpecMetrics counts={spec.counts} />
+          <SpecMetrics
+            counts={spec.counts}
+            active={activeQuality}
+            onSelect={selectQuality}
+          />
 
           {isInProgress(spec.status) && (
             <div className="flex basis-full items-center gap-4">

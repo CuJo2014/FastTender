@@ -298,15 +298,21 @@ class ItemStatusFilter(StrEnum):
     """Сегменты таблицы строк (ось состояния, Design lock ревизии).
 
     `pending`/`confirmed`/`rejected` — ось решения менеджера;
-    `no_candidate` — ось качества (у строки нет ни одного кандидата),
-    показывается независимо от решения.
+    `high`/`mid`/`low`/`no_candidate` — ось качества сопоставления (по топ-1
+    кандидату), показывается независимо от решения. Один активный фильтр —
+    оси не комбинируются (см. план: модель «один активный фильтр»). Бакеты
+    качества повторяют логику `_compute_counts`, чтобы число на чипе сводки
+    совпадало с числом отфильтрованных строк.
     """
 
     all = "all"
     pending = "pending"
     confirmed = "confirmed"
     rejected = "rejected"
-    no_candidate = "no_candidate"
+    high = "high"  # топ-1 confidence >= порога авто-подтверждения
+    mid = "mid"  # min <= топ-1 confidence < порога авто-подтверждения
+    low = "low"  # есть кандидат, но топ-1 confidence < min
+    no_candidate = "no_candidate"  # кандидатов нет совсем
 
 
 class ItemSort(StrEnum):
@@ -315,8 +321,19 @@ class ItemSort(StrEnum):
     confidence_asc = "confidence_asc"
 
 
-def _item_status_conditions(status_filter: ItemStatusFilter) -> list:  # type: ignore[type-arg]
-    """WHERE-условия для сегментного фильтра (применяются и к count, и к выборке)."""
+def _item_status_conditions(
+    status_filter: ItemStatusFilter,
+    high_threshold: float,
+    min_threshold: float,
+) -> list:  # type: ignore[type-arg]
+    """WHERE-условия для сегментного фильтра (применяются и к count, и к выборке).
+
+    Бакеты качества (`high`/`mid`/`low`) считаются по топ-1 кандидату
+    (`max(confidence) where rank=1`) — той же формулой, что и `_compute_counts`,
+    чтобы число строк совпало с числом на чипе сводки. Для строк без кандидата
+    подзапрос даёт NULL, и сравнения вида `NULL < min` дают false → они в эти
+    бакеты не попадают (для них есть отдельный `no_candidate`).
+    """
     if status_filter is ItemStatusFilter.pending:
         return [~exists().where(Verification.spec_item_id == SpecItem.id)]
     if status_filter is ItemStatusFilter.confirmed:
@@ -339,6 +356,24 @@ def _item_status_conditions(status_filter: ItemStatusFilter) -> list:  # type: i
         ]
     if status_filter is ItemStatusFilter.no_candidate:
         return [~exists().where(MatchCandidate.spec_item_id == SpecItem.id)]
+    if status_filter in (
+        ItemStatusFilter.high,
+        ItemStatusFilter.mid,
+        ItemStatusFilter.low,
+    ):
+        best_conf = (
+            select(func.max(MatchCandidate.confidence))
+            .where(
+                MatchCandidate.spec_item_id == SpecItem.id,
+                MatchCandidate.rank == 1,
+            )
+            .scalar_subquery()
+        )
+        if status_filter is ItemStatusFilter.high:
+            return [best_conf >= high_threshold]
+        if status_filter is ItemStatusFilter.mid:
+            return [best_conf >= min_threshold, best_conf < high_threshold]
+        return [best_conf < min_threshold]  # low
     return []
 
 
@@ -363,7 +398,16 @@ async def get_specification_items(
         )
 
     # Один набор условий — и для total, и для выборки (иначе пагинация врёт).
-    base_where = [SpecItem.spec_id == spec_id, *_item_status_conditions(status_filter)]
+    # Пороги качества — те же, что у счётчиков сводки (_compute_counts).
+    settings = get_settings()
+    base_where = [
+        SpecItem.spec_id == spec_id,
+        *_item_status_conditions(
+            status_filter,
+            settings.confidence_auto_confirm,
+            settings.confidence_min,
+        ),
+    ]
 
     total = await session.scalar(
         select(func.count()).select_from(SpecItem).where(*base_where)

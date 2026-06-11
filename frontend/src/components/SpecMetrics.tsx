@@ -1,8 +1,20 @@
-import { useState } from "react";
 import type { SpecificationCounts } from "../types/api";
+
+const QUALITY_SEGMENTS = [
+  { key: "high", label: "≥ 90%", sub: "высокая", color: "bg-conf-high" },
+  { key: "mid", label: "50–90%", sub: "средняя", color: "bg-conf-medium" },
+  { key: "low", label: "< 50%", sub: "слабый кандидат", color: "bg-conf-low" },
+  { key: "none", label: "Нет кандидата", sub: "не сопоставлено", color: "bg-slate-400" },
+] as const;
+
+export type SegmentKey = (typeof QUALITY_SEGMENTS)[number]["key"];
 
 interface Props {
   counts: SpecificationCounts;
+  /** Активный бакет качества (управляется фильтром таблицы). */
+  active?: SegmentKey | null;
+  /** Клик по чипу/сегменту — фильтрует таблицу по бакету качества. */
+  onSelect?: (key: SegmentKey) => void;
 }
 
 /**
@@ -11,22 +23,10 @@ interface Props {
  *  — «Качество сопоставления» (derived): распределение топ-кандидатов по
  *    уверенности, включая «Нет кандидата».
  *
- * Легенда-чипы пока работают как подсветка сегмента (визуальная связь числа
- * с полосой). Фактическая фильтрация таблицы по категории появится с серверным
- * фильтром (PR4) — тогда onSelect прокинется в состояние таблицы.
+ * Легенда-чипы = фильтр таблицы: клик прокидывает бакет качества в серверный
+ * фильтр строк (`onSelect`); `active` подсвечивает текущий выбор.
  */
-const QUALITY_SEGMENTS = [
-  { key: "high", label: "≥ 90%", sub: "высокая", color: "bg-conf-high" },
-  { key: "mid", label: "50–90%", sub: "средняя", color: "bg-conf-medium" },
-  { key: "low", label: "< 50%", sub: "слабый кандидат", color: "bg-conf-low" },
-  { key: "none", label: "Нет кандидата", sub: "не сопоставлено", color: "bg-slate-400" },
-] as const;
-
-type SegmentKey = (typeof QUALITY_SEGMENTS)[number]["key"];
-
-export function SpecMetrics({ counts }: Props) {
-  const [active, setActive] = useState<SegmentKey | null>(null);
-
+export function SpecMetrics({ counts, active = null, onSelect }: Props) {
   const total = counts.items_total;
   const verified = counts.items_verified;
   const pct = total > 0 ? Math.round((verified / total) * 100) : 0;
@@ -101,7 +101,12 @@ export function SpecMetrics({ counts }: Props) {
               <button
                 key={s.key}
                 type="button"
-                onClick={() => setActive((a) => (a === s.key ? null : s.key))}
+                onClick={() => onSelect?.(s.key)}
+                title={
+                  active === s.key
+                    ? "Снять фильтр по качеству"
+                    : `Показать только: ${s.label}`
+                }
                 className={
                   "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors " +
                   (active === s.key

@@ -24,6 +24,8 @@ from fasttender.models import (
     DataSource,
     DataSourceType,
     Item,
+    MatchCandidate,
+    MatchType,
     Specification,
     SpecificationStatus,
     SpecItem,
@@ -397,6 +399,83 @@ async def test_get_specification_404_for_unknown_id(
 ) -> None:
     response = await client.get("/api/v1/specifications/00000000-0000-0000-0000-000000000001")
     assert response.status_code == 404
+
+
+# --- Фильтр по качеству сопоставления (ось Б) ---
+
+
+async def test_items_quality_filter_buckets_match_counts(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """status=high/mid/low/no_candidate отдаёт ровно те строки, что считают
+    счётчики сводки (_compute_counts): по топ-1 кандидату, пороги 0.9/0.5."""
+    source = DataSource(type=DataSourceType.COMPANY_CATALOG, name="Каталог")
+    committed_db.add(source)
+    await committed_db.flush()
+
+    # 3 позиции каталога под high/mid/low; 4-я строка — без кандидата
+    items = [
+        Item(source_id=source.id, name=f"Поз {i}", is_active=True) for i in range(3)
+    ]
+    committed_db.add_all(items)
+    await committed_db.flush()
+
+    spec = Specification(
+        source_filename="q.xlsx",
+        storage_path="/tmp/q.xlsx",
+        status=SpecificationStatus.REVIEWING,
+    )
+    committed_db.add(spec)
+    await committed_db.flush()
+    rows = [
+        SpecItem(spec_id=spec.id, line_number=n, name_raw=f"Строка {n}", raw_row={})
+        for n in range(1, 5)
+    ]
+    committed_db.add_all(rows)
+    await committed_db.flush()
+
+    # топ-1 кандидаты: high=0.95, mid=0.70, low=0.30; 4-я строка без кандидата
+    confidences = [0.95, 0.70, 0.30]
+    committed_db.add_all(
+        [
+            MatchCandidate(
+                spec_item_id=rows[i].id,
+                item_id=items[i].id,
+                confidence=confidences[i],
+                match_type=MatchType.LEXICAL,
+                rank=1,
+                explanation={},
+            )
+            for i in range(3)
+        ]
+    )
+    await committed_db.commit()
+
+    base = f"/api/v1/specifications/{spec.id}/items"
+
+    async def _lines(status: str) -> list[int]:
+        body = (await client.get(f"{base}?status={status}")).json()
+        return sorted(i["line_number"] for i in body["items"]), body["total"]
+
+    high_lines, high_total = await _lines("high")
+    assert high_lines == [1] and high_total == 1
+    mid_lines, mid_total = await _lines("mid")
+    assert mid_lines == [2] and mid_total == 1
+    low_lines, low_total = await _lines("low")
+    assert low_lines == [3] and low_total == 1
+    nc_lines, nc_total = await _lines("no_candidate")
+    assert nc_lines == [4] and nc_total == 1
+    all_lines, all_total = await _lines("all")
+    assert all_lines == [1, 2, 3, 4] and all_total == 4
+
+    # числа на чипах сводки совпадают с фильтром
+    spec_body = (await client.get(f"/api/v1/specifications/{spec.id}")).json()
+    counts = spec_body["counts"]
+    assert counts["items_matched_high"] == 1
+    assert counts["items_matched_medium"] == 1
+    assert counts["items_low"] == 1
+    assert counts["items_no_candidate"] == 1
 
 
 # --- Закладка строки (миграция 0017) ---
