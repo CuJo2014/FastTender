@@ -126,6 +126,14 @@ export function CandidatesTable({
                 </td>
                 <td className="px-3 py-2">
                   {cand.name}
+                  {cand.explanation.linked_via_supplier && (
+                    <span
+                      className="ml-1.5 inline-block rounded bg-amber-50 px-1 text-[10px] text-amber-700"
+                      title={cand.explanation.human_readable}
+                    >
+                      ↳ через прайс
+                    </span>
+                  )}
                   {cand.category_path && (
                     <div className="mt-0.5 text-xs text-slate-400">
                       {cand.category_path}

@@ -116,6 +116,8 @@ export interface CandidateExplanation {
   semantic_similarity: number;
   brand_match: boolean;
   unit_match: boolean;
+  // Карточка подтянута через связанную позицию прайса (не найдена независимо).
+  linked_via_supplier?: boolean;
   final_score: number;
   human_readable: string;
   levels_hit: MatchType[];

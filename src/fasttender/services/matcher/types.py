@@ -62,6 +62,9 @@ class Explanation(BaseModel):
     # Код, извлечённый из наименования и совпавший с article каталога (point 2).
     extracted_code_match: str = "none"  # none | exact | in_name | fuzzy
     extracted_code: str | None = None
+    # Провенанс: карточка каталога подтянута через связанную позицию прайса
+    # (Item.linked_catalog_item_id), а не найдена независимым поиском.
+    linked_via_supplier: bool = False
     final_score: float
     human_readable: str
     levels_hit: list[MatchType] = Field(default_factory=list)

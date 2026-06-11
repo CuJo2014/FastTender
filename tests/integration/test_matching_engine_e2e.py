@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fasttender.models import Supplier
-from fasttender.models.enums import MatchType
+from fasttender.models import DataSource, Item, Supplier
+from fasttender.models.enums import DataSourceType, MatchType
 from fasttender.repositories.pg_trgm import PgTrgmSearchRepository
 from fasttender.services.importer import CatalogImporter, ImportMode, PriceListImporter
 from fasttender.services.matcher import MatchingEngine, MatchInput
@@ -264,6 +264,135 @@ async def test_match_many_processes_full_spec(
     # Третья позиция — либо нет в каталоге, либо слабый лексический
     if results[2].catalog:
         assert results[2].catalog[0].confidence < 0.5
+
+
+async def _seed_linked_pair(
+    session: AsyncSession,
+    *,
+    link_source: str,
+) -> tuple[Item, Item]:
+    """Карточка каталога + позиция прайса, связанная с ней через
+    linked_catalog_item_id. Артикулы/имена РАЗНЫЕ, чтобы карточка каталога
+    НЕ находилась по тексту спеки независимо."""
+    cat_src = DataSource(type=DataSourceType.COMPANY_CATALOG, name="Каталог")
+    sup_src = DataSource(type=DataSourceType.SUPPLIER_PRICELIST, name="Прайс-1")
+    session.add_all([cat_src, sup_src])
+    await session.flush()
+
+    catalog_item = Item(
+        source_id=cat_src.id,
+        article_raw="CAT-ONLY-999",
+        article_normalized="CATONLY999",
+        name="Каталожная карточка крепежа Ц0999",
+        name_normalized="каталожная карточка крепежа ц0999",
+        is_active=True,
+    )
+    session.add(catalog_item)
+    await session.flush()
+
+    supplier_item = Item(
+        source_id=sup_src.id,
+        article_raw="SUP-LINK-001",
+        article_normalized="SUPLINK001",
+        name="Болт от поставщика",
+        name_normalized="болт от поставщика",
+        linked_catalog_item_id=catalog_item.id,
+        catalog_link_source=link_source,
+        is_active=True,
+    )
+    session.add(supplier_item)
+    await session.commit()
+    return catalog_item, supplier_item
+
+
+@pytest.mark.parametrize("link_source", ["manual", "auto"])
+async def test_linked_catalog_card_promoted_from_supplier_match(
+    session: AsyncSession,
+    engine_factory,  # type: ignore[no-untyped-def]
+    link_source: str,
+) -> None:
+    """Позиция прайса совпала по артикулу и привязана к карточке каталога,
+    которая по тексту независимо не находится → карточка ВСЁ РАВНО появляется
+    в каталожных кандидатах с унаследованной уверенностью (и ручная, и авто)."""
+    catalog_item, _supplier_item = await _seed_linked_pair(session, link_source=link_source)
+    engine = engine_factory()
+
+    result = await engine.match(
+        MatchInput(
+            line_number=1,
+            name="Болт от поставщика",
+            name_normalized="болт от поставщика",
+            article="SUP-LINK-001",
+            article_normalized="SUPLINK001",
+        )
+    )
+
+    # Прайс нашёл точное совпадение
+    assert len(result.suppliers) == 1
+    sup_conf = result.suppliers[0].confidence
+    assert sup_conf >= 0.95
+
+    # Карточка каталога подтянута через связь, хотя по тексту не искалась
+    assert len(result.catalog) == 1
+    promoted = result.catalog[0]
+    assert promoted.item_id == catalog_item.id
+    assert promoted.confidence == sup_conf  # унаследована от прайса
+    assert promoted.primary_match_type is MatchType.HYBRID
+    assert promoted.explanation.linked_via_supplier is True
+    assert "связанную позицию прайса" in promoted.explanation.human_readable
+
+
+async def test_linked_catalog_card_not_duplicated_when_already_matched(
+    session: AsyncSession,
+    engine_factory,  # type: ignore[no-untyped-def]
+) -> None:
+    """Если карточка каталога и так нашлась независимо — промоушен её не
+    дублирует (одна строка в каталоге, без подмены на HYBRID)."""
+    cat_src = DataSource(type=DataSourceType.COMPANY_CATALOG, name="Каталог")
+    sup_src = DataSource(type=DataSourceType.SUPPLIER_PRICELIST, name="Прайс-1")
+    session.add_all([cat_src, sup_src])
+    await session.flush()
+
+    # Общий артикул — карточка найдётся независимо (exact), прайс тоже
+    catalog_item = Item(
+        source_id=cat_src.id,
+        article_raw="SHARED-001",
+        article_normalized="SHARED001",
+        name="Болт общий каталог",
+        name_normalized="болт общий каталог",
+        is_active=True,
+    )
+    session.add(catalog_item)
+    await session.flush()
+    supplier_item = Item(
+        source_id=sup_src.id,
+        article_raw="SHARED-001",
+        article_normalized="SHARED001",
+        name="Болт общий прайс",
+        name_normalized="болт общий прайс",
+        linked_catalog_item_id=catalog_item.id,
+        catalog_link_source="manual",
+        is_active=True,
+    )
+    session.add(supplier_item)
+    await session.commit()
+    engine = engine_factory()
+
+    result = await engine.match(
+        MatchInput(
+            line_number=1,
+            name="Болт общий",
+            name_normalized="болт общий",
+            article="SHARED-001",
+            article_normalized="SHARED001",
+        )
+    )
+
+    # Ровно одна карточка каталога, найдена независимо (EXACT), без дубля
+    catalog_ids = [c.item_id for c in result.catalog]
+    assert catalog_ids.count(catalog_item.id) == 1
+    assert len(result.catalog) == 1
+    assert result.catalog[0].primary_match_type is MatchType.EXACT_ARTICLE
 
 
 async def test_code_in_name_and_brand_boost_from_attributes(

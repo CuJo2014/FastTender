@@ -139,6 +139,25 @@ class SearchRepository(Protocol):
         """
         ...
 
+    async def fetch_linked_catalog(
+        self,
+        supplier_item_ids: list[UUID],
+        *,
+        source_filter: SourceFilter | None = None,
+    ) -> dict[UUID, "SearchHit"]:
+        """Связанные карточки каталога для позиций прайса (миграция 0008).
+
+        Для каждой позиции прайса из `supplier_item_ids`, у которой проставлен
+        `Item.linked_catalog_item_id`, возвращает {supplier_item_id: SearchHit
+        связанной карточки каталога}. Карточка отдаётся только если она активна
+        (и её источник активен) при `only_active`.
+
+        Матчер использует это, чтобы подтянуть связанную карточку каталога в
+        каталожные кандидаты, даже когда по тексту она независимо не нашлась.
+        Дефолт здесь (для не-PG реализаций/фейков) — пусто, без промоушена.
+        """
+        return {}
+
     async def search_semantic(
         self,
         embedding: list[float],

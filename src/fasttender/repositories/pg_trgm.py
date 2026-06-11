@@ -195,6 +195,58 @@ class PgTrgmSearchRepository(SearchRepository):
         rows = (await self._session.execute(stmt, filter_params)).mappings().all()
         return {row["m"] for row in rows if row["m"]}
 
+    async def fetch_linked_catalog(
+        self,
+        supplier_item_ids: list[UUID],
+        *,
+        source_filter: SourceFilter | None = None,
+    ) -> dict[UUID, SearchHit]:
+        if not supplier_item_ids:
+            return {}
+
+        sf = source_filter or SourceFilter()  # дефолт only_active=True
+        active_clause = (
+            "AND cat.is_active = true AND ds.status = 'active'"
+            if sf.only_active
+            else ""
+        )
+        # sup — позиция прайса, cat — связанная карточка каталога (self-join по
+        # linked_catalog_item_id). score=1.0 — заглушка (матчер ставит
+        # унаследованную уверенность), match_type ниже игнорируется.
+        sql = f"""
+            SELECT
+                sup.id AS supplier_item_id,
+                cat.id               AS item_id,
+                cat.source_id        AS source_id,
+                ds.type              AS source_type,
+                cat.article_raw      AS article_raw,
+                cat.article_normalized AS article_normalized,
+                cat.code_1c          AS code_1c,
+                cat.name             AS name,
+                cat.name_normalized  AS name_normalized,
+                cat.manufacturer     AS manufacturer,
+                cat.manufacturer_normalized AS manufacturer_normalized,
+                cat.price            AS price,
+                cat.currency         AS currency,
+                cat.unit             AS unit,
+                cat.in_stock         AS in_stock,
+                cat.is_active        AS is_active,
+                1.0::float           AS score
+            FROM item AS sup
+            JOIN item AS cat ON cat.id = sup.linked_catalog_item_id
+            JOIN data_source AS ds ON ds.id = cat.source_id
+            WHERE sup.id IN :link_ids
+              AND sup.linked_catalog_item_id IS NOT NULL
+              {active_clause}
+        """
+        stmt = _bind_expanding(text(sql), ["link_ids"])
+        rows = (
+            await self._session.execute(stmt, {"link_ids": tuple(supplier_item_ids)})
+        ).mappings().all()
+        return {
+            row["supplier_item_id"]: _row_to_hit(row, MatchType.HYBRID) for row in rows
+        }
+
 
 # --- Внутренние утилиты ---
 
