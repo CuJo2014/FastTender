@@ -63,6 +63,8 @@ export interface SpecificationRead {
   created_at: string;
   completed_at: string | null;
   matched_count: number;
+  bookmarked_item_id: string | null;
+  bookmarked_position: number | null;
   counts: SpecificationCounts;
 }
 

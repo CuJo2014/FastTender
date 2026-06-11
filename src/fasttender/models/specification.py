@@ -49,6 +49,20 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
 
+    # Закладка строки (миграция 0017): одна на спецификацию. FK на spec_item
+    # с ON DELETE SET NULL — взаимная ссылка с spec_item.spec_id, поэтому
+    # use_alter (констрейнт создаётся отдельным ALTER).
+    bookmarked_item_id: Mapped[UUID | None] = mapped_column(
+        PgUUID(as_uuid=True),
+        ForeignKey(
+            "spec_item.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_specification_bookmarked_item",
+        ),
+        nullable=True,
+    )
+
     status: Mapped[SpecificationStatus] = mapped_column(
         Enum(
             SpecificationStatus,
@@ -76,6 +90,9 @@ class Specification(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="specification",
         cascade="all, delete-orphan",
         order_by="SpecItem.line_number",
+        # Явно указываем FK: есть второй путь specification.bookmarked_item_id →
+        # spec_item.id (закладка), иначе join неоднозначен.
+        foreign_keys="SpecItem.spec_id",
     )
     client: Mapped["Client | None"] = relationship(
         back_populates="specifications",

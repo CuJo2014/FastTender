@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SpecItemRead, VerificationDecision } from "../types/api";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
@@ -23,6 +23,11 @@ interface Props {
   /** Массовый выбор: строка отмечена / переключатель. */
   selected?: boolean;
   onToggleSelect?: (specItemId: string) => void;
+  /** Закладка: строка помечена закладкой / переключатель (одна на спеку). */
+  bookmarked?: boolean;
+  onToggleBookmark?: (specItemId: string) => void;
+  /** Подсветка + автопрокрутка к строке (переход «К закладке»). */
+  highlight?: boolean;
 }
 
 export function SpecItemRow({
@@ -35,8 +40,20 @@ export function SpecItemRow({
   stickyTop = 0,
   selected = false,
   onToggleSelect,
+  bookmarked = false,
+  onToggleBookmark,
+  highlight = false,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  // Переход «К закладке»: когда строка становится подсвеченной — прокручиваем
+  // её в центр области просмотра.
+  useEffect(() => {
+    if (highlight && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlight]);
 
   const verificationBadge = renderVerificationBadge(item);
   const topCatalog = item.candidates_catalog[0];
@@ -66,9 +83,16 @@ export function SpecItemRow({
   return (
     <>
       <tr
+        ref={rowRef}
         className={
           "border-t border-slate-200 hover:bg-slate-50 " +
-          (item.verification ? "bg-slate-50/40" : "")
+          (highlight
+            ? "bg-amber-100 ring-2 ring-inset ring-amber-400 transition-colors "
+            : bookmarked
+              ? "bg-amber-50/60 "
+              : item.verification
+                ? "bg-slate-50/40"
+                : "")
         }
       >
         <td className={`${td} text-center${tdSticky}`} style={stickyStyle}>
@@ -86,7 +110,25 @@ export function SpecItemRow({
           className={`${td} tabular-nums text-slate-500${tdSticky}`}
           style={stickyStyle}
         >
-          {item.line_number}
+          <div className="flex items-center gap-1">
+            <span>{item.line_number}</span>
+            {onToggleBookmark && (
+              <button
+                type="button"
+                aria-pressed={bookmarked}
+                title={bookmarked ? "Снять закладку" : "Поставить закладку (одна на спецификацию)"}
+                onClick={() => onToggleBookmark(item.id)}
+                className={
+                  "text-base leading-none transition-colors " +
+                  (bookmarked
+                    ? "text-amber-500 hover:text-amber-600"
+                    : "text-slate-300 hover:text-amber-500")
+                }
+              >
+                {bookmarked ? "⚑" : "⚐"}
+              </button>
+            )}
+          </div>
         </td>
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
           <div className="font-medium">{item.name_raw}</div>

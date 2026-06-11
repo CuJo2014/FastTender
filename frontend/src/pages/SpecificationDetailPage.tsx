@@ -73,6 +73,14 @@ function DetailContent({ specId }: { specId: string }) {
     return () => clearTimeout(t);
   }, [autoConfirmThreshold]);
 
+  // Переход «К закладке»: id подсвеченной строки. Гаснет сам через 3 c.
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = setTimeout(() => setHighlightId(null), 3000);
+    return () => clearTimeout(t);
+  }, [highlightId]);
+
   const clearSelection = useCallback(() => setSelected(new Set()), []);
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -259,6 +267,20 @@ function DetailContent({ specId }: { specId: string }) {
     },
   });
 
+  // Закладка строки (одна на спеку): toggle через PATCH спеки.
+  const bookmarkMutation = useMutation({
+    mutationFn: (bookmarkedItemId: string | null) =>
+      api.updateSpecification(specId, { bookmarked_item_id: bookmarkedItemId }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["specifications", specId] }),
+    onError: (e) =>
+      window.alert(
+        e instanceof ApiError
+          ? `Ошибка закладки (${e.status})`
+          : "Не удалось изменить закладку",
+      ),
+  });
+
   const unverifyMutation = useMutation({
     mutationFn: (specItemId: string) => api.unverifySpecItem(specId, specItemId),
     onSuccess: () => {
@@ -354,6 +376,24 @@ function DetailContent({ specId }: { specId: string }) {
     });
   };
 
+  // Закладка: клик по флажку строки ставит её закладкой, повторный — снимает.
+  const toggleBookmark = (id: string) =>
+    bookmarkMutation.mutate(spec.bookmarked_item_id === id ? null : id);
+
+  // Переход «К закладке»: сбрасываем фильтр/сортировку (чтобы строка точно
+  // была видна и совпала с расчётом страницы по line_number), прыгаем на её
+  // страницу и подсвечиваем.
+  const jumpToBookmark = () => {
+    const bid = spec.bookmarked_item_id;
+    const pos = spec.bookmarked_position;
+    if (!bid || !pos) return;
+    setStatusFilter("all");
+    setSortBy("line_number");
+    clearSelection();
+    setPage(Math.ceil(pos / pageSize));
+    setHighlightId(bid);
+  };
+
   return (
     <div className="space-y-6">
       <div ref={setStickyHeaderEl} className="sticky top-14 z-20 bg-slate-50 pb-2">
@@ -422,6 +462,16 @@ function DetailContent({ specId }: { specId: string }) {
             }`}
             actions={
               <div className="flex flex-wrap items-center gap-2">
+                {spec.bookmarked_item_id && (
+                  <Button
+                    variant="outline"
+                    onClick={jumpToBookmark}
+                    title="Перейти к строке, отмеченной закладкой"
+                    className="text-amber-700 hover:bg-amber-50"
+                  >
+                    ⚑ К закладке
+                  </Button>
+                )}
                 <div className="flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2">
                   <label
                     htmlFor="threshold"
@@ -636,6 +686,9 @@ function DetailContent({ specId }: { specId: string }) {
                       pending={verifyMutation.isPending || unverifyMutation.isPending}
                       selected={selected.has(item.id)}
                       onToggleSelect={toggleSelect}
+                      bookmarked={spec.bookmarked_item_id === item.id}
+                      onToggleBookmark={toggleBookmark}
+                      highlight={highlightId === item.id}
                       // Строка «прилипает» под шапкой таблицы (nav 56 + шапка
                       // спеки + высота thead ~41) при разворачивании.
                       stickyTop={stickyHeaderHeight + 56 + 41}

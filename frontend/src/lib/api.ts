@@ -191,6 +191,7 @@ export const api = {
       spec_number?: string | null;
       spec_date?: string | null;
       delivery_date?: string | null;
+      bookmarked_item_id?: string | null;
     },
   ) =>
     request<SpecificationRead>(`/specifications/${specId}`, {

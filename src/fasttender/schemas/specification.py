@@ -56,6 +56,11 @@ class SpecificationRead(BaseModel):
     completed_at: datetime | None = None
     # Прогресс матчинга: строк обработано (знаменатель — counts.items_total)
     matched_count: int = 0
+    # Закладка строки (миграция 0017): id отмеченной строки + её порядковый
+    # номер (1-based ранг по line_number среди всех строк) — фронт по нему
+    # вычисляет страницу для перехода «К закладке». Считается в _spec_read.
+    bookmarked_item_id: UUID | None = None
+    bookmarked_position: int | None = None
     counts: SpecificationCounts = Field(default_factory=SpecificationCounts)
 
 
@@ -81,6 +86,9 @@ class SpecificationUpdate(BaseModel):
     spec_number: str | None = Field(None, max_length=128)
     spec_date: date | None = None
     delivery_date: date | None = None
+    # Закладка строки: id строки спеки; null снимает закладку. Поле провалидируется
+    # в роуте (строка должна принадлежать этой спеке).
+    bookmarked_item_id: UUID | None = None
 
 
 class LinkedCatalogItemRead(BaseModel):

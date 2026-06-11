@@ -399,6 +399,94 @@ async def test_get_specification_404_for_unknown_id(
     assert response.status_code == 404
 
 
+# --- Закладка строки (миграция 0017) ---
+
+
+async def _make_spec_with_items(
+    session: AsyncSession, n: int
+) -> tuple[Specification, list[SpecItem]]:
+    spec = Specification(source_filename="b.xlsx", storage_path="/tmp/b.xlsx")
+    session.add(spec)
+    await session.flush()
+    items = [
+        SpecItem(spec_id=spec.id, line_number=i, name_raw=f"Строка {i}", raw_row={})
+        for i in range(1, n + 1)
+    ]
+    session.add_all(items)
+    await session.commit()
+    for it in items:
+        await session.refresh(it)
+    await session.refresh(spec)
+    return spec, items
+
+
+async def test_bookmark_set_move_and_clear_with_position(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """PATCH ставит/переносит/снимает закладку; bookmarked_position = ранг по №."""
+    spec, items = await _make_spec_with_items(committed_db, 3)
+    base = f"/api/v1/specifications/{spec.id}"
+
+    # ставим на 2-ю строку → позиция 2
+    r = await client.patch(base, json={"bookmarked_item_id": str(items[1].id)})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["bookmarked_item_id"] == str(items[1].id)
+    assert body["bookmarked_position"] == 2
+
+    # GET тоже отдаёт закладку и позицию
+    got = (await client.get(base)).json()
+    assert got["bookmarked_item_id"] == str(items[1].id)
+    assert got["bookmarked_position"] == 2
+
+    # переносим на 3-ю → позиция 3 (одна закладка на спеку)
+    r2 = await client.patch(base, json={"bookmarked_item_id": str(items[2].id)})
+    assert r2.json()["bookmarked_position"] == 3
+
+    # снимаем (null) → обоих полей нет
+    r3 = await client.patch(base, json={"bookmarked_item_id": None})
+    assert r3.json()["bookmarked_item_id"] is None
+    assert r3.json()["bookmarked_position"] is None
+
+
+async def test_bookmark_rejects_item_from_other_spec(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """Закладка на строку из ЧУЖОЙ спеки → 422, ничего не меняется."""
+    spec_a, _ = await _make_spec_with_items(committed_db, 2)
+    _spec_b, items_b = await _make_spec_with_items(committed_db, 2)
+
+    r = await client.patch(
+        f"/api/v1/specifications/{spec_a.id}",
+        json={"bookmarked_item_id": str(items_b[0].id)},
+    )
+    assert r.status_code == 422
+    got = (await client.get(f"/api/v1/specifications/{spec_a.id}")).json()
+    assert got["bookmarked_item_id"] is None
+
+
+async def test_bookmark_cleared_when_item_deleted(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """ON DELETE SET NULL: удаление отмеченной строки снимает закладку."""
+    spec, items = await _make_spec_with_items(committed_db, 2)
+    base = f"/api/v1/specifications/{spec.id}"
+
+    await client.patch(base, json={"bookmarked_item_id": str(items[0].id)})
+    assert (await client.get(base)).json()["bookmarked_item_id"] == str(items[0].id)
+
+    # удаляем отмеченную строку напрямую
+    await committed_db.delete(items[0])
+    await committed_db.commit()
+
+    got = (await client.get(base)).json()
+    assert got["bookmarked_item_id"] is None
+    assert got["bookmarked_position"] is None
+
+
 async def test_list_specifications_returns_recent_first(
     client: AsyncClient,
     committed_db: AsyncSession,

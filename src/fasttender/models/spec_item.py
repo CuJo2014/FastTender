@@ -48,7 +48,12 @@ class SpecItem(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Сырая исходная строка для аудита
     raw_row: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
-    specification: Mapped["Specification"] = relationship(back_populates="items")
+    specification: Mapped["Specification"] = relationship(
+        back_populates="items",
+        # Второй FK-путь — specification.bookmarked_item_id → spec_item.id
+        # (закладка); явно фиксируем join по spec_id.
+        foreign_keys=[spec_id],
+    )
     candidates: Mapped[list["MatchCandidate"]] = relationship(
         back_populates="spec_item",
         cascade="all, delete-orphan",

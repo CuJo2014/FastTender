@@ -272,6 +272,19 @@ async def update_specification(
         else:
             spec.trading_platform_id = None
             spec.trading_platform = None
+    # Закладка строки: null снимает; id — проверяем принадлежность этой спеке.
+    if "bookmarked_item_id" in data:
+        bid = data["bookmarked_item_id"]
+        if bid is not None:
+            item = await session.get(SpecItem, bid)
+            if item is None or item.spec_id != spec.id:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={"message": "Строка не найдена в этой спецификации"},
+                )
+            spec.bookmarked_item_id = bid
+        else:
+            spec.bookmarked_item_id = None
     # Прочие реквизиты тендера
     for field in ("spec_number", "spec_date", "delivery_date"):
         if field in data:
@@ -899,7 +912,26 @@ async def _spec_read(session: AsyncSession, spec: Specification) -> Specificatio
     counts = await _compute_counts(
         session, spec.id, settings.confidence_auto_confirm, settings.confidence_min
     )
-    return SpecificationRead.model_validate({**spec.__dict__, "counts": counts})
+    # Позиция закладки = 1-based ранг по line_number (для перехода «К закладке»:
+    # фронт делит на page_size и получает страницу). None, если закладки нет
+    # или строка уже удалена.
+    bookmarked_position: int | None = None
+    if spec.bookmarked_item_id is not None:
+        bookmark_ln = await session.scalar(
+            select(SpecItem.line_number).where(SpecItem.id == spec.bookmarked_item_id)
+        )
+        if bookmark_ln is not None:
+            bookmarked_position = await session.scalar(
+                select(func.count())
+                .select_from(SpecItem)
+                .where(
+                    SpecItem.spec_id == spec.id,
+                    SpecItem.line_number <= bookmark_ln,
+                )
+            )
+    return SpecificationRead.model_validate(
+        {**spec.__dict__, "counts": counts, "bookmarked_position": bookmarked_position}
+    )
 
 
 async def _compute_counts(
