@@ -35,6 +35,7 @@ from tests.fixtures.spec_builders import make_xlsx
 from tests.integration.conftest import TEST_DB_URL
 
 _TABLES = (
+    "gold_row",
     "verification",
     "match_candidate",
     "spec_item",
@@ -399,6 +400,32 @@ async def test_get_specification_404_for_unknown_id(
 ) -> None:
     response = await client.get("/api/v1/specifications/00000000-0000-0000-0000-000000000001")
     assert response.status_code == 404
+
+
+# --- Членство строк в gold dataset (индикатор в таблице) ---
+
+
+async def test_items_expose_gold_membership(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """GET /items отдаёт gold_row_id и gold_label_status для строк, посеянных
+    в gold dataset; для остальных — null."""
+    spec, items = await _make_spec_with_items(committed_db, 2)
+
+    r = await client.post(
+        "/api/v1/gold-rows/from-spec-item",
+        json={"spec_item_id": str(items[0].id), "label_status": "аналог"},
+    )
+    assert r.status_code == 201, r.text
+    gold_id = r.json()["id"]
+
+    body = (await client.get(f"/api/v1/specifications/{spec.id}/items")).json()
+    by_line = {i["line_number"]: i for i in body["items"]}
+    assert by_line[1]["gold_row_id"] == gold_id
+    assert by_line[1]["gold_label_status"] == "аналог"
+    assert by_line[2]["gold_row_id"] is None
+    assert by_line[2]["gold_label_status"] is None
 
 
 # --- Решение «Передать» (в группу МОС, миграция 0018) ---

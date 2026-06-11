@@ -302,21 +302,6 @@ function DetailContent({ specId }: { specId: string }) {
     },
   });
 
-  const addToGoldMutation = useMutation({
-    mutationFn: (specItemId: string) =>
-      api.createGoldRowFromSpecItem({ spec_item_id: specItemId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["gold-rows"] });
-      window.alert("Строка добавлена в золотой датасет");
-    },
-    onError: (e) =>
-      window.alert(
-        e instanceof ApiError
-          ? `Ошибка ${e.status}`
-          : "Не удалось добавить в gold dataset",
-      ),
-  });
-
   const rematchMutation = useMutation({
     mutationFn: () => api.rematchSpecification(specId),
     onSuccess: () => {
@@ -740,9 +725,6 @@ function DetailContent({ specId }: { specId: string }) {
                       }
                       onUnverify={(specItemId) =>
                         unverifyMutation.mutate(specItemId)
-                      }
-                      onAddToGold={(specItemId) =>
-                        addToGoldMutation.mutate(specItemId)
                       }
                     />
                   ))}

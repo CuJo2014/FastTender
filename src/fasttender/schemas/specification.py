@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from fasttender.models.enums import (
     DataSourceType,
+    GoldLabelStatus,
     MatchType,
     SpecificationStatus,
     VerificationDecision,
@@ -180,6 +181,10 @@ class SpecItemRead(BaseModel):
     candidates_catalog: list[CandidateRead] = Field(default_factory=list)
     candidates_suppliers: list[CandidateRead] = Field(default_factory=list)
     verification: VerificationRead | None = None
+    # Членство в gold dataset: id строки эталона и её статус-метка, если строка
+    # спеки уже посеяна в gold (для индикатора/действий в таблице).
+    gold_row_id: UUID | None = None
+    gold_label_status: GoldLabelStatus | None = None
 
 
 class PaginatedSpecItems(BaseModel):

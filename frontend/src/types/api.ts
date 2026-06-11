@@ -192,6 +192,8 @@ export interface SpecItemRead {
   candidates_catalog: CandidateRead[];
   candidates_suppliers: CandidateRead[];
   verification: VerificationRead | null;
+  gold_row_id: string | null;
+  gold_label_status: GoldLabelStatus | null;
 }
 
 export interface PaginatedSpecItems {

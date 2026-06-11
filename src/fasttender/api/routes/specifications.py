@@ -34,6 +34,7 @@ from fasttender.models import (
     Client,
     DataSource,
     DataSourceType,
+    GoldRow,
     Item,
     MatchCandidate,
     Specification,
@@ -477,6 +478,20 @@ async def get_specification_items(
         )
         chosen_items = {it.id: it for it in chosen_rows}
 
+    # Членство строк в gold dataset — один батч-запрос на страницу. Если на
+    # строку несколько эталонов (теоретически), берём последний (created_at).
+    page_item_ids = [si.id for si in spec_items]
+    gold_by_item: dict[UUID, GoldRow] = {}
+    if page_item_ids:
+        gold_rows = await session.scalars(
+            select(GoldRow)
+            .where(GoldRow.spec_item_id.in_(page_item_ids))
+            .order_by(GoldRow.created_at)
+        )
+        for g in gold_rows:
+            if g.spec_item_id is not None:
+                gold_by_item[g.spec_item_id] = g
+
     items_out: list[SpecItemRead] = []
     for spec_item in spec_items:
         catalog_candidates: list[CandidateRead] = []
@@ -537,6 +552,8 @@ async def get_specification_items(
                 decided_at=v.updated_at,
             )
 
+        gold = gold_by_item.get(spec_item.id)
+
         items_out.append(
             SpecItemRead(
                 id=spec_item.id,
@@ -556,6 +573,8 @@ async def get_specification_items(
                 candidates_catalog=catalog_candidates,
                 candidates_suppliers=supplier_candidates,
                 verification=verification_read,
+                gold_row_id=gold.id if gold else None,
+                gold_label_status=gold.label_status if gold else None,
             )
         )
 

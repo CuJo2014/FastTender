@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { SpecItemRead, VerificationDecision } from "../types/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "../lib/api";
+import type {
+  GoldLabelStatus,
+  SpecItemRead,
+  VerificationDecision,
+} from "../types/api";
 import { Badge } from "./ui/Badge";
 import { Button } from "./ui/Button";
 import { CandidatesTable } from "./CandidatesTable";
@@ -15,7 +21,6 @@ interface Props {
     chosenItemId?: string | null,
   ) => void;
   onUnverify?: (specItemId: string) => void;
-  onAddToGold?: (specItemId: string) => void;
   pending: boolean;
   defaultExpanded?: boolean;
   /** px-смещение для «прилипания» строки при разворачивании (под шапкой). */
@@ -34,7 +39,6 @@ export function SpecItemRow({
   item,
   onVerify,
   onUnverify,
-  onAddToGold,
   pending,
   defaultExpanded = false,
   stickyTop = 0,
@@ -128,6 +132,11 @@ export function SpecItemRow({
                 {bookmarked ? "⚑" : "⚐"}
               </button>
             )}
+            <GoldCell
+              specItemId={item.id}
+              goldRowId={item.gold_row_id}
+              goldLabelStatus={item.gold_label_status}
+            />
           </div>
         </td>
         <td className={`${td}${tdSticky}`} style={stickyStyle}>
@@ -300,21 +309,6 @@ export function SpecItemRow({
                     ↺ Сбросить решение
                   </Button>
                 )}
-                {onAddToGold && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={
-                      (item.verification ? "" : "mr-auto ") +
-                      "text-amber-800 hover:bg-amber-50"
-                    }
-                    onClick={() => onAddToGold(item.id)}
-                    disabled={pending}
-                    title="Добавить строку в золотой датасет (эталон берётся из выбранной позиции)"
-                  >
-                    ★ в gold dataset
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -354,6 +348,132 @@ export function SpecItemRow({
         </tr>
       )}
     </>
+  );
+}
+
+const GOLD_STATUSES: GoldLabelStatus[] = [
+  "найдено",
+  "аналог",
+  "не найдено",
+  "сомнительно",
+];
+
+/**
+ * Контрол gold dataset в колонке «№» (справа от закладки). Если строка уже в
+ * эталоне — звезда подсвечена, по клику можно сменить статус-метку или убрать.
+ * Если нет — по клику выбираешь статус («найдено»/«аналог»/…), строка сеется в
+ * gold через POST /gold-rows/from-spec-item (эталон берётся из выбранной позиции).
+ */
+function GoldCell({
+  specItemId,
+  goldRowId,
+  goldLabelStatus,
+}: {
+  specItemId: string;
+  goldRowId: string | null;
+  goldLabelStatus: GoldLabelStatus | null;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const inGold = goldRowId != null;
+
+  // Широкая инвалидация ["specifications"] обновит и список строк (индикатор).
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["specifications"] });
+    qc.invalidateQueries({ queryKey: ["gold-rows"] });
+    setOpen(false);
+  };
+  const onErr = () => window.alert("Не удалось изменить gold dataset");
+
+  const add = useMutation({
+    mutationFn: (status: GoldLabelStatus) =>
+      api.createGoldRowFromSpecItem({
+        spec_item_id: specItemId,
+        label_status: status,
+      }),
+    onSuccess: invalidate,
+    onError: onErr,
+  });
+  const change = useMutation({
+    mutationFn: (status: GoldLabelStatus) =>
+      api.updateGoldRow(goldRowId as string, { label_status: status }),
+    onSuccess: invalidate,
+    onError: onErr,
+  });
+  const remove = useMutation({
+    mutationFn: () => api.deleteGoldRow(goldRowId as string),
+    onSuccess: invalidate,
+    onError: onErr,
+  });
+  const busy = add.isPending || change.isPending || remove.isPending;
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        title={
+          inGold
+            ? `В gold dataset: ${goldLabelStatus}`
+            : "Добавить в gold dataset"
+        }
+        className={
+          "text-base leading-none transition-colors disabled:opacity-50 " +
+          (inGold
+            ? "text-amber-500 hover:text-amber-600"
+            : "text-slate-300 hover:text-amber-500")
+        }
+      >
+        {inGold ? "★" : "☆"}
+      </button>
+
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-48 rounded-md border border-slate-200 bg-white p-1 text-left shadow-lg">
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+            {inGold ? "Входит в gold dataset" : "В gold dataset как…"}
+          </div>
+          {GOLD_STATUSES.map((s) => {
+            const active = inGold && s === goldLabelStatus;
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={busy || active}
+                onClick={() => (inGold ? change.mutate(s) : add.mutate(s))}
+                className={
+                  "flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-60 " +
+                  (active ? "font-semibold text-amber-700" : "text-slate-700")
+                }
+              >
+                <span className="text-amber-500">{active ? "●" : "○"}</span>
+                {s}
+              </button>
+            );
+          })}
+          {inGold && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => remove.mutate()}
+              className="mt-1 flex w-full items-center rounded px-2 py-1 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              ✕ Убрать из gold dataset
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
