@@ -229,6 +229,15 @@ export function SpecItemRow({
               >
                 ✕
               </button>
+              <button
+                type="button"
+                title="Передать в МОС (менеджеры отдела снабжения)"
+                onClick={() => onVerify(item.id, "forwarded", null)}
+                disabled={pending}
+                className="inline-flex h-7 w-7 items-center justify-center rounded border border-slate-300 text-slate-500 hover:border-blue-500 hover:bg-blue-50 hover:text-blue-600 disabled:opacity-50"
+              >
+                ↗
+              </button>
             </div>
           ) : (
             <button
@@ -325,6 +334,15 @@ export function SpecItemRow({
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => onVerify(item.id, "forwarded", null)}
+                  disabled={pending}
+                  title="Передать в группу МОС (менеджеры отдела снабжения)"
+                >
+                  ↗ Передать
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => onVerify(item.id, "new_item_requested", null)}
                   disabled={pending}
                 >
@@ -353,6 +371,8 @@ function renderVerificationBadge(item: SpecItemRead) {
       return <Badge tone="warning">Не найдено</Badge>;
     case "new_item_requested":
       return <Badge tone="info">Новая позиция</Badge>;
+    case "forwarded":
+      return <Badge tone="info">Передано в МОС</Badge>;
     default:
       return <Badge>{v.decision}</Badge>;
   }

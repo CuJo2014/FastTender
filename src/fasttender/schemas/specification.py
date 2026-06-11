@@ -32,6 +32,7 @@ class SpecificationCounts(BaseModel):
     # Разбивка решений — для чисел на сегментах фильтра таблицы (ревизия UI)
     items_confirmed: int = 0
     items_rejected: int = 0
+    items_forwarded: int = 0  # решение «Передать» (в группу МОС)
 
 
 class SpecificationRead(BaseModel):

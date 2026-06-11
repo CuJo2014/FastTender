@@ -47,6 +47,7 @@ type StatusFilter =
   | "pending"
   | "confirmed"
   | "rejected"
+  | "forwarded"
   | "high"
   | "mid"
   | "low"
@@ -627,6 +628,15 @@ function DetailContent({ specId }: { specId: string }) {
               >
                 ✕ Отклонить
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => bulkMutation.mutate("forwarded")}
+                disabled={bulkMutation.isPending}
+                title="Передать выбранные строки в группу МОС"
+              >
+                ↗ Передать
+              </Button>
               <button
                 type="button"
                 onClick={clearSelection}
@@ -769,6 +779,7 @@ const STATUS_SEGMENTS: {
   { key: "pending", label: "Не проверено", count: (c) => c.items_pending },
   { key: "confirmed", label: "Подтверждено", count: (c) => c.items_confirmed },
   { key: "rejected", label: "Отклонено", count: (c) => c.items_rejected },
+  { key: "forwarded", label: "Передано", count: (c) => c.items_forwarded },
   { key: "no_candidate", label: "Нет кандидата", count: (c) => c.items_no_candidate },
 ];
 

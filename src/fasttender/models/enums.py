@@ -52,6 +52,9 @@ class VerificationDecision(StrEnum):
     REJECTED = "rejected"
     NOT_FOUND = "not_found"
     NEW_ITEM_REQUESTED = "new_item_requested"
+    # «Передать» — дальнейшая передача строки в группу МОС (менеджеры отдела
+    # снабжения). Терминальное решение (строка считается обработанной).
+    FORWARDED = "forwarded"
 
 
 class GoldLabelStatus(StrEnum):

@@ -30,7 +30,8 @@ export type VerificationDecision =
   | "confirmed"
   | "rejected"
   | "not_found"
-  | "new_item_requested";
+  | "new_item_requested"
+  | "forwarded";
 
 // --- Specifications ---
 
@@ -45,6 +46,7 @@ export interface SpecificationCounts {
   items_pending: number;
   items_confirmed: number;
   items_rejected: number;
+  items_forwarded: number;
 }
 
 export interface SpecificationRead {

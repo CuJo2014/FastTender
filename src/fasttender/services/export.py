@@ -180,6 +180,8 @@ def _decide_winner(spec_item: SpecItem) -> tuple[Item | None, str, str | None]:
             return None, "Отклонено", verification.notes
         if verification.decision is VerificationDecision.NEW_ITEM_REQUESTED:
             return None, "Требуется новая позиция каталога", verification.notes
+        if verification.decision is VerificationDecision.FORWARDED:
+            return None, "Передано в МОС", verification.notes
 
     # Без верификации — топ-1 catalog приоритетнее supplier
     top = _pick_top_candidate(spec_item.candidates)

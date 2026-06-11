@@ -309,6 +309,7 @@ class ItemStatusFilter(StrEnum):
     pending = "pending"
     confirmed = "confirmed"
     rejected = "rejected"
+    forwarded = "forwarded"  # решение «Передать» (в группу МОС)
     high = "high"  # топ-1 confidence >= порога авто-подтверждения
     mid = "mid"  # min <= топ-1 confidence < порога авто-подтверждения
     low = "low"  # есть кандидат, но топ-1 confidence < min
@@ -351,6 +352,15 @@ def _item_status_conditions(
                 and_(
                     Verification.spec_item_id == SpecItem.id,
                     Verification.decision == VerificationDecision.REJECTED,
+                )
+            )
+        ]
+    if status_filter is ItemStatusFilter.forwarded:
+        return [
+            exists().where(
+                and_(
+                    Verification.spec_item_id == SpecItem.id,
+                    Verification.decision == VerificationDecision.FORWARDED,
                 )
             )
         ]
@@ -1035,6 +1045,7 @@ async def _compute_counts(
     items_verified = sum(by_decision.values())
     confirmed = by_decision.get(VerificationDecision.CONFIRMED, 0)
     rejected = by_decision.get(VerificationDecision.REJECTED, 0)
+    forwarded = by_decision.get(VerificationDecision.FORWARDED, 0)
 
     return SpecificationCounts(
         items_total=int(items_total),
@@ -1047,6 +1058,7 @@ async def _compute_counts(
         items_pending=int(items_total) - items_verified,
         items_confirmed=confirmed,
         items_rejected=rejected,
+        items_forwarded=forwarded,
     )
 
 

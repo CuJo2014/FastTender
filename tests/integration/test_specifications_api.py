@@ -401,6 +401,38 @@ async def test_get_specification_404_for_unknown_id(
     assert response.status_code == 404
 
 
+# --- Решение «Передать» (в группу МОС, миграция 0018) ---
+
+
+async def test_forward_decision_counts_and_filter(
+    client: AsyncClient,
+    committed_db: AsyncSession,
+) -> None:
+    """decision=forwarded фиксируется, считается отдельно (items_forwarded) и
+    как верифицированная строка; фильтр status=forwarded её отдаёт."""
+    spec, items = await _make_spec_with_items(committed_db, 3)
+
+    # «Передать» — без выбранной позиции (как rejected/not_found)
+    r = await client.post(
+        f"/api/v1/specifications/{spec.id}/items/{items[1].id}/verify",
+        json={"decision": "forwarded"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["decision"] == "forwarded"
+
+    counts = (await client.get(f"/api/v1/specifications/{spec.id}")).json()["counts"]
+    assert counts["items_forwarded"] == 1
+    assert counts["items_verified"] == 1  # forwarded — это решение
+    assert counts["items_pending"] == 2
+
+    body = (
+        await client.get(f"/api/v1/specifications/{spec.id}/items?status=forwarded")
+    ).json()
+    assert body["total"] == 1
+    assert body["items"][0]["line_number"] == 2
+    assert body["items"][0]["verification"]["decision"] == "forwarded"
+
+
 # --- Фильтр по качеству сопоставления (ось Б) ---
 
 
