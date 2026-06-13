@@ -88,3 +88,34 @@
 		level INFO
 	}
 }
+
+# --- Uptrade Sync API (отдельный проект /home/master/projects/Uptrade) ---
+# Caddy подключён к сети uptrade_default → резолвит контейнер uptrade-api.
+# Защита — JWT в самом приложении (/auth/login → Bearer). /docs и /health открыты.
+uptrade.arsenalpro.tech {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy uptrade-api:8000 {
+		transport http {
+			read_timeout 2m
+			write_timeout 2m
+			dial_timeout 10s
+		}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	log {
+		output stdout
+		format console
+		level INFO
+	}
+}
