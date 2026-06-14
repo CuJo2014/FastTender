@@ -15,6 +15,68 @@ interface Props {
   active?: SegmentKey | null;
   /** Клик по чипу/сегменту — фильтрует таблицу по бакету качества. */
   onSelect?: (key: SegmentKey) => void;
+  /** Компактный режим: одна строка для липкой шапки при скролле. */
+  compact?: boolean;
+}
+
+/**
+ * Компактная сводка в одну строку (для свёрнутой липкой шапки): прогресс
+ * верификации одной фразой + тонкая полоса + 4 мини-чипа качества. Чипы
+ * по-прежнему фильтруют таблицу (та же `onSelect`/`active`, что в полном виде).
+ */
+function CompactMetrics({ counts, active = null, onSelect }: Props) {
+  const total = counts.items_total;
+  const verified = counts.items_verified;
+  const pct = total > 0 ? Math.round((verified / total) * 100) : 0;
+  const values: Record<SegmentKey, number> = {
+    high: counts.items_matched_high,
+    mid: counts.items_matched_medium,
+    low: counts.items_low,
+    none: counts.items_no_candidate,
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 whitespace-nowrap text-xs text-slate-600">
+        <span>
+          Пров.{" "}
+          <b className="font-semibold tabular-nums text-slate-800">
+            {verified}/{total}
+          </b>{" "}
+          <span className="tabular-nums text-slate-400">({pct}%)</span>
+        </span>
+        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className="h-full rounded-full bg-conf-high transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        {QUALITY_SEGMENTS.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => onSelect?.(s.key)}
+            title={
+              active === s.key
+                ? `Снять фильтр: ${s.label}`
+                : `${s.sub} — ${s.label}: ${values[s.key]}`
+            }
+            className={
+              "flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs transition-colors " +
+              (active === s.key
+                ? "border-slate-900 bg-slate-50"
+                : "border-slate-200 hover:border-slate-300 hover:bg-slate-50")
+            }
+          >
+            <span className={`h-2 w-2 flex-none rounded-sm ${s.color}`} />
+            <span className="font-semibold tabular-nums">{values[s.key]}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -26,7 +88,10 @@ interface Props {
  * Легенда-чипы = фильтр таблицы: клик прокидывает бакет качества в серверный
  * фильтр строк (`onSelect`); `active` подсвечивает текущий выбор.
  */
-export function SpecMetrics({ counts, active = null, onSelect }: Props) {
+export function SpecMetrics({ counts, active = null, onSelect, compact = false }: Props) {
+  if (compact) {
+    return <CompactMetrics counts={counts} active={active} onSelect={onSelect} />;
+  }
   const total = counts.items_total;
   const verified = counts.items_verified;
   const pct = total > 0 ? Math.round((verified / total) * 100) : 0;

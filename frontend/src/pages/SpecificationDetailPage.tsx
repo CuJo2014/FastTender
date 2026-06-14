@@ -92,6 +92,24 @@ function DetailContent({ specId }: { specId: string }) {
     return () => clearTimeout(t);
   }, [highlightId]);
 
+  // Свёрнутая шапка спеки: один тонкий ряд вместо полной карточки —
+  // освобождает вертикаль под список и колонку поиска сопоставления при
+  // скролле. Ручной toggle, выбор запоминается между заходами.
+  const [headerCompact, setHeaderCompact] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("spec-header-compact") === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("spec-header-compact", headerCompact ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }, [headerCompact]);
+
   const clearSelection = useCallback(() => setSelected(new Set()), []);
   const toggleSelect = useCallback((id: string) => {
     setSelected((prev) => {
@@ -409,6 +427,45 @@ function DetailContent({ specId }: { specId: string }) {
     <div className="space-y-6">
       <div ref={setStickyHeaderEl} className="sticky top-14 z-20 bg-slate-50 pb-2">
       <Card>
+        {headerCompact ? (
+        <CardBody className="flex items-center gap-3 px-4 py-2">
+          {/* Свёрнутая шапка: имя + статус + сводка одной строкой + действия.
+              Развернуть — кнопка ⤢. */}
+          <span
+            className="min-w-0 max-w-[24rem] truncate text-sm font-medium text-slate-700"
+            title={spec.source_filename}
+          >
+            {spec.source_filename}
+          </span>
+          <Badge tone={statusTone(spec.status)}>
+            {statusLabel(spec.status)}
+          </Badge>
+          <div className="hidden h-5 w-px bg-slate-200 sm:block" />
+          <SpecMetrics
+            compact
+            counts={spec.counts}
+            active={activeQuality}
+            onSelect={selectQuality}
+          />
+          <div className="ml-auto flex shrink-0 items-center gap-2 text-sm">
+            <Link
+              to="/specifications"
+              className="text-slate-500 hover:text-slate-900"
+            >
+              ← К списку
+            </Link>
+            <button
+              type="button"
+              onClick={() => setHeaderCompact(false)}
+              title="Развернуть шапку — клиент, площадка, метрики полностью"
+              className="rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              ⤢
+            </button>
+            <SpecOverflowMenu specId={specId} status={spec.status} />
+          </div>
+        </CardBody>
+        ) : (
         <CardBody className="flex flex-wrap items-center gap-x-6 gap-y-3">
           {/* Компактная строка: навигация + малозначимые имя файла/дата + меню.
               Раньше это был высокий CardHeader — он съедал место под список. */}
@@ -429,6 +486,14 @@ function DetailContent({ specId }: { specId: string }) {
               >
                 ← К списку
               </Link>
+              <button
+                type="button"
+                onClick={() => setHeaderCompact(true)}
+                title="Свернуть шапку — больше места для списка"
+                className="rounded px-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ⤡
+              </button>
               <SpecOverflowMenu specId={specId} status={spec.status} />
             </div>
           </div>
@@ -471,6 +536,7 @@ function DetailContent({ specId }: { specId: string }) {
             </div>
           )}
         </CardBody>
+        )}
       </Card>
       </div>
 
