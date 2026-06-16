@@ -148,9 +148,11 @@ class MatchingEngine:
                 per_level[MatchType.FUZZY_ARTICLE] = fuzzy_hits
 
         # --- Уровень 3: лексический по наименованию ---
+        # Ищем по денойз-версии (без «канцелярского хвоста»), если она есть —
+        # иначе по полному name_normalized (вариант A, см. denoise_name).
         if input_.name_normalized:
             lex_hits = await self._repo.search_lexical(
-                input_.name_normalized,
+                input_.lexical_query or input_.name_normalized,
                 source_filter=source_filter,
                 limit=pool_limit,
             )

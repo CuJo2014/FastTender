@@ -46,3 +46,29 @@ def test_code_tokens_from_name_and_attributes() -> None:
     si = _spec_item(name_raw="Домкрат гидравлический бутылочный", attributes_raw="5т Д1-3913010-50 ШААЗ")
     mi = match_input_from_spec_item(si)
     assert "3913010" in mi.code_tokens
+
+
+def test_lexical_query_denoised_while_full_text_kept() -> None:
+    # Клиент свалил ТЗ в наименование (вариант A): lexical_query обрезан по
+    # «канцелярскому хвосту», а name_normalized хранит полный текст для
+    # извлечения кодов/бренда и отображения explanation.
+    si = _spec_item(
+        name_raw=(
+            "Электроды Ø2,5 ОК 53.70 ESAB, Э50А, ГОСТ 9467-75, "
+            "Упаковка vacpac в вакуумной упаковке"
+        ),
+    )
+    mi = match_input_from_spec_item(si)
+    assert mi.lexical_query is not None
+    assert "гост" not in mi.lexical_query
+    assert "vacpac" not in mi.lexical_query
+    assert "esab" in mi.lexical_query
+    # полный текст не теряется
+    assert mi.name_normalized is not None
+    assert "vacpac" in mi.name_normalized
+
+
+def test_lexical_query_equals_name_when_no_boilerplate() -> None:
+    si = _spec_item(name_raw="Гайка М10", attributes_raw=None)
+    mi = match_input_from_spec_item(si)
+    assert mi.lexical_query == mi.name_normalized == "гайка м10"

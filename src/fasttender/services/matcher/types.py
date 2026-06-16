@@ -27,6 +27,13 @@ class MatchInput(BaseModel):
     name: str
     name_normalized: str | None = None
 
+    # Денойз-версия текста для ЛЕКСИЧЕСКОГО поиска: наименование без
+    # «канцелярского хвоста» (комплектация/ГОСТ/упаковка…), который раздувает
+    # запрос и топит верные позиции (вариант A, см. denoise_name). Если None —
+    # лексический поиск идёт по name_normalized. Извлечение кодов и детект
+    # бренда по-прежнему работают по полному name_normalized.
+    lexical_query: str | None = None
+
     article: str | None = None
     article_normalized: str | None = None
 

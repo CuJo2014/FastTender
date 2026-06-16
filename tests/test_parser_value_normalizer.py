@@ -137,3 +137,68 @@ def test_extract_code_tokens_digit_runs() -> None:
     # несколько серий, уникальность и порядок
     assert extract_code_tokens("модель TE-VC 2342380 и 100500") == ["2342380", "100500"]
     assert extract_code_tokens(None) == []
+
+
+class TestDenoiseName:
+    """Денойз клиентских наименований-«простыней» (вариант A)."""
+
+    def test_cuts_komplektaciya_and_attestat(self) -> None:
+        # реальный кейс из спеки 0616_003: имя + аттестат НАКС + комплектация
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        out = denoise_name(
+            "АППАРАТ ИНВЕРТОРНЫЙ КЕДР MULTIARC-2000 (220В, 10-200А) + аттестат НАКС "
+            "Комплектация: Опция – Пульт ДУ КЕДР ПДУ-01К, Кабель 25мм2, Вставка СКР"
+        )
+        assert out == "АППАРАТ ИНВЕРТОРНЫЙ КЕДР MULTIARC-2000 (220В, 10-200А)"
+
+    def test_cuts_at_zavod_origin(self) -> None:
+        # «Завод ESAB в Санкт-Петербурге …» — происхождение, не товар: режем по
+        # «завод» (бренд потом восстанавливает brand-boost из полного текста).
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        out = denoise_name(
+            "Электроды Ø2,5 ОК 53.70 Завод ESAB в Санкт-Петербурге, Э50А, ОК 53.70, "
+            "ГОСТ 9467-75, Упаковка vacpac в вакуумной упаковке"
+        )
+        assert out == "Электроды Ø2,5 ОК 53.70"
+
+    def test_cuts_at_gost_without_zavod(self) -> None:
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        out = denoise_name("Лента ФУМ 19мм ГОСТ 12345-67, упаковка 10шт")
+        assert out == "Лента ФУМ 19мм"
+        assert "гост" not in out.lower()
+
+    def test_cuts_at_napryazhenie_seti(self) -> None:
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        out = denoise_name(
+            "Термопенал НОВЭЛ ТП-5/150 220 В. Напряжение сети питания: 220 В. "
+            "Температура: 150 ºС. Габариты ..."
+        )
+        assert out == "Термопенал НОВЭЛ ТП-5/150 220 В"
+
+    def test_no_marker_returns_unchanged(self) -> None:
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        assert denoise_name("Куб для воды Еврокуб IBC 1000 л") == "Куб для воды Еврокуб IBC 1000 л"
+
+    def test_short_head_falls_back_to_full(self) -> None:
+        # маркер-слово — сам товар: не режем до огрызка, ищем по полному тексту
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        text = "Датчик температуры воздуха ДТВ-1 в комплекте"
+        assert denoise_name(text) == text
+
+    def test_word_boundary_does_not_falsetrigger(self) -> None:
+        # «гостиница», «структура» не должны срабатывать как ГОСТ/ТУ
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        text = "Табличка Гостиница металлическая структура 300х200"
+        assert denoise_name(text) == text
+
+    def test_none_passthrough(self) -> None:
+        from fasttender.services.parser.value_normalizer import denoise_name
+
+        assert denoise_name(None) is None

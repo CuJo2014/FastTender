@@ -7,6 +7,7 @@
 from fasttender.models import SpecItem
 from fasttender.services.matcher.types import MatchInput
 from fasttender.services.parser.value_normalizer import (
+    denoise_name,
     extract_article_candidates,
     extract_code_tokens,
     normalize_article,
@@ -33,6 +34,18 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         search_text = f"{spec_item.name_raw} {spec_item.attributes_raw}"
     name_norm = normalize_name(search_text)
 
+    # Денойз-запрос для лексического поиска (вариант A): отрезаем «канцелярский
+    # хвост» наименования (комплектация/ГОСТ/упаковка…), который размывает
+    # скоринг и топит верные позиции. Характеристики — структурированные
+    # параметры подбора, их оставляем целиком. Когда хвоста нет, denoise_name
+    # вернёт исходный текст → lexical_query совпадёт с name_norm.
+    denoised = denoise_name(spec_item.name_raw)
+    if spec_item.attributes_raw:
+        denoised = f"{denoised} {spec_item.attributes_raw}" if denoised else (
+            spec_item.attributes_raw
+        )
+    lexical_query = normalize_name(denoised)
+
     unit_norm = spec_item.unit_normalized or (
         spec_item.unit_raw.lower().strip() if spec_item.unit_raw else None
     )
@@ -55,6 +68,7 @@ def match_input_from_spec_item(spec_item: SpecItem) -> MatchInput:
         line_number=spec_item.line_number,
         name=spec_item.name_raw,
         name_normalized=name_norm,
+        lexical_query=lexical_query,
         article=spec_item.article_raw,
         article_normalized=article_norm,
         article_candidates=article_candidates,

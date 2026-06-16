@@ -47,6 +47,7 @@ from fasttender.repositories.pg_trgm import PgTrgmSearchRepository
 from fasttender.services.matcher import MatchingEngine, MatchInput, MatchResult
 from fasttender.services.parser.value_normalizer import (
     clean_string,
+    denoise_name,
     normalize_article,
     normalize_name,
 )
@@ -309,10 +310,17 @@ def build_match_input(row: GoldRow) -> MatchInput:
         # (без извлечения структурированных атрибутов).
         name = f"{name} {row.attributes}"
 
+    # Денойз-запрос для лексического поиска (вариант A) — та же логика, что в
+    # adapters.match_input_from_spec_item, чтобы eval мерил рантайм-поведение.
+    denoised = denoise_name(row.name)
+    if row.attributes:
+        denoised = f"{denoised} {row.attributes}" if denoised else row.attributes
+
     return MatchInput(
         line_number=row.sheet_row,
         name=name,
         name_normalized=normalize_name(name),
+        lexical_query=normalize_name(denoised),
         article=row.article,
         article_normalized=normalize_article(row.article),
         manufacturer=row.manufacturer,
